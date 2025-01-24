@@ -51,7 +51,7 @@ function welcomePage(props) {
                                 <div className="link-icon">
                                 </div>
                                 <div className="link-content">
-                                    <h4>DSoft</h4>
+                                    <h4>Dribll</h4>
                                     <p>Explore our other products.</p>
                                 </div>
                             </div>
