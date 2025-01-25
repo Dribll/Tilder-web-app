@@ -28,11 +28,11 @@
 
 Contributions are welcome! If you'd like to contribute to Tilder Code Editor, please follow these steps:
 
-1. Fork the repository: git fork https://github.com/Dribll/Tilder-web-app.git
-2. Create a new branch: git branch my-feature
-3. Make your changes and commit them: git commit -m "My feature"
-4. Push your changes: git push origin my-feature
-5. Open a pull request: https://github.com/Dribll/Tilder-web-app/pulls
+1. Fork the repository: `git fork https://github.com/Dribll/Tilder-web-app.git`
+2. Create a new branch: `git branch my-feature`
+3. Make your changes and commit them: `git commit -m "My feature"`
+4. Push your changes: `git push origin my-feature`
+5. Open a [Pull request](https://github.com/Dribll/Tilder-web-app/pulls)
 
 or
 
