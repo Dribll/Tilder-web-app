@@ -18,11 +18,11 @@ export default function Info(props) {
                         <p>Date: <b>{moment().format('MMMM Do YYYY')}</b></p>
                         <p>Time: <DigitalClock /> </p>
                         <p>Licensed under <q><b>MIT</b></q></p>
-                        <p>Copyright &copy; {moment().format('YYYY')} DSoft</p>
+                        <p>Copyright &copy; {moment().format('YYYY')} Dribll</p>
                         <a href="https://shorturl.at/C9Xnk" target="_blank">
                             <button className="btn-normal">Send Feedback</button>
                         </a>
-                        <a className="githubicon" href="https://github.com/DSoftofficial/Tilder-web-app">
+                        <a className="githubicon" href="https://github.com/Dribll/Tilder-web-app">
                             <p id="contributionp">To learn how you can contribute to Tilder, check out the project on <u >GitHub</u>.</p>
                         </a>
                     </div>
