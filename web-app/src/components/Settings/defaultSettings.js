@@ -8,7 +8,7 @@ const defaultSettings = {
   fontFamily: "Consolas, monospace",
   fontWeight: "normal",
   lineHeight: 0,
-  letterSpacing: 1.9,
+  letterSpacing: 0.1,
   fontLigatures: false,
 
 
@@ -344,5 +344,6 @@ const defaultSettings = {
   }
 
 };
+
 
 export default defaultSettings;
