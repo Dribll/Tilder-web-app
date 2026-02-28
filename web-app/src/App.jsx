@@ -1,13 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import "./App.css";
 import MenuBar from "./components/MenuBar/MenuBar.jsx";
-import MonacoEditor from "./components/Editor/MonacoEditor.jsx";
 import SideBar from "./components/SideBar/SideBar.jsx";
 import ReviewBar from "./components/ReviewBar/ReviewBar.jsx";
 import StatusBar from "./components/StatusBar/StatusBar.jsx";
 import Tabs from "./components/Tabs/Tabs.jsx";
 import Search from "./components/SideBar/Main Components/Search/Search.jsx";
-import Extensions from "./components/SideBar/Main Components/Extensions/Extensions.jsx";
 import FilePioneer from "./components/SideBar/Main Components/filePioneer/filePioneer.jsx";
 import GitHub from "./components/SideBar/Main Components/GItHub/GitHub.jsx";
 import Terminal from "./components/SideBar/Main Components/Terminal/Terminal.jsx";
@@ -18,8 +16,29 @@ import DefaultPage from "./components/DefaultPage/DefaultPage.jsx";
 import WelcomePage from "./components/WelcomePage/WelcomePage.jsx";
 import Info from './components/Info/Info.jsx';
 import NewFile from './components/NewFile/NewFile.jsx';
+import Modal from './components/Modal/Modal.jsx';
+import Settings from './components/Settings/Settings.jsx';
+import Extensions from './components/Extensions/Extensions.jsx';
+import MonacoEditor from './components/Editor/MonacoEditor.jsx';
+import shortcutManager from './components/ShortcutManager.js';
+import defaultSettings from './components/Settings/defaultSettings.js';
 
 function App(props) {
+
+  const [settings, setSettings] = useState(() => {
+    const saved = localStorage.getItem("editorSettings");
+    return saved ? JSON.parse(saved) : defaultSettings;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      "editorSettings",
+      JSON.stringify(settings)
+    );
+
+  }, [settings]);
+
+
   let [ariaExpandedisplayfilepioneer, changeariaExpandedisplayfilepioneer] = useState('none');
   let [ariaExpandedisplaysearch, changeariaExpandedisplaysearch] = useState('none');
   let [ariaExpandedisplaycodeblocks, changeariaExpandedisplaycodeblocks] = useState('none');
@@ -41,6 +60,32 @@ function App(props) {
   let [language, setLanguage] = useState('python');
   let [formFileName, setFormFileName] = useState('');
 
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalType, setModalType] = useState("");
+
+  function openSettings() {
+    setModalType("Settings");
+    if (modalOpen == false) {
+      setModalOpen(true);
+    } else {
+      setModalOpen(false);
+    }
+  };
+
+  function openExtensions() {
+    setModalType("Extensions");
+    if (modalOpen == false) {
+      setModalOpen(true);
+    } else {
+      setModalOpen(false);
+    }
+  };
+
+  function closeModal() {
+    setModalOpen(false);
+    setModalType("");
+  };
+
   const [files, setFiles] = useState([]); // Start with an empty array for files
   const [activeFileId, setActiveFileId] = useState(null); // Initially, no active file
 
@@ -48,8 +93,11 @@ function App(props) {
     event.preventDefault();
     console.log(document.getElementById('formFileName_id').value);
     setFormFileName(document.getElementById('formFileName_id').value);
-    console.log(formFileName);
+    // console.log(formFileName);
     setNewFileVisibility('none');
+    setMonacoEditorStyle({
+      opacity: '1'
+    })
     const newFile = {
       id: files.length + 1,
       name: `${formFileName}`,
@@ -413,11 +461,26 @@ function App(props) {
   };
 
 
+  shortcutManager.registerKeys([
+
+    {
+      key: "ctrl+,",
+      toggle: true,
+      action: openSettings
+    }
+
+  ]);
+
+
   return (
     <>
       <Info triggerInfoClose={triggerInfoClose} InfoDisplay={InfoDisplay} />
+      <Modal isOpen={modalOpen} closeModal={closeModal} title={modalType}>
+        <Settings modalType={modalType} settings={settings} setSettings={setSettings} />
+        <Extensions modalType={modalType} />
+      </Modal>
       <div id="mainProductivityArea">
-        <MenuBar toggleInfoDisplay={toggleInfoDisplay} triggerNewFile={triggerNewFile} />
+        <MenuBar toggleInfoDisplay={toggleInfoDisplay} triggerNewFile={triggerNewFile} openSettings={openSettings} openExtensions={openExtensions} triggerOpenFile={triggerOpenFile} />
         <div className="mainsect">
           <div className="codewrpr">
             <ReviewBar />
@@ -425,24 +488,25 @@ function App(props) {
               <DefaultPage DefaultPageDisplay={DefaultPageDisplay} dimensionsDefaultPage={maincodeareaStyle} />
               <Tabs
                 TabDisplay={TabDisplay}
-                WelcomeTabDisplay={WelcomeTabDisplay} 
-                toggleWelcomePagedisplay={toggleWelcomePageDisplay} 
-                TabsWrapperDisplay={TabsWrapperDisplay} 
+                WelcomeTabDisplay={WelcomeTabDisplay}
+                toggleWelcomePagedisplay={toggleWelcomePageDisplay}
+                TabsWrapperDisplay={TabsWrapperDisplay}
                 files={files}
                 activeFileId={activeFileId}
                 onTabClick={handleTabClick}
-                
+
               />
               {activeFile && (
-              <MonacoEditor
+                <MonacoEditor
                   value={activeFile.content}
                   onChange={handleEditorChange}
-              />
+                  settings={settings}
+                />
               )}
               <WelcomePage DimensionsWelcomePage={maincodeareaStyle} WelcomePageDisplay={WelcomePageDisplay} triggerNewFile={triggerNewFile} />
               <div id="mainCodeNavigation">
-                <NewFile  NewFileVisibility={NewFileVisibility} CreateNewFile={CreateNewFile} />
-                <MonacoEditor monacoEditorStyle={monacoEditorStyle} code={code} language={language} MonacoEditorDisplay={MonacoEditorDisplay} />
+                <NewFile NewFileVisibility={NewFileVisibility} CreateNewFile={CreateNewFile} />
+                <MonacoEditor monacoEditorStyle={monacoEditorStyle} code={code} language={language} MonacoEditorDisplay={MonacoEditorDisplay} settings={settings} />
               </div>
             </div>
           </div>
@@ -455,7 +519,7 @@ function App(props) {
             <Debug ariaExpandedisplaydebug={ariaExpandedisplaydebug} />
             <Search ariaExpandedisplaysearch={ariaExpandedisplaysearch} />
             <FilePioneer ariaExpandedisplayfilepioneer={ariaExpandedisplayfilepioneer} />
-            <SideBar toggleAriaExpandedfilepioneer={toggleAriaExpandedfilepioneer} toggleAriaExpandedsearch={toggleAriaExpandedsearch} toggleAriaExpandedextensions={toggleAriaExpandedextensions} toggleAriaExpandedterminal={toggleAriaExpandedterminal} toggleAriaExpandedebug={toggleAriaExpandedebug} toggleAriaExpandedgit={toggleAriaExpandedgit} toggleAriaExpandedgithub={toggleAriaExpandedgithub} toggleAriaExpandedcodeblocks={toggleAriaExpandedcodeblocks} />
+            <SideBar toggleAriaExpandedfilepioneer={toggleAriaExpandedfilepioneer} toggleAriaExpandedsearch={toggleAriaExpandedsearch} toggleAriaExpandedextensions={openExtensions} toggleAriaExpandedterminal={toggleAriaExpandedterminal} toggleAriaExpandedebug={toggleAriaExpandedebug} toggleAriaExpandedgit={toggleAriaExpandedgit} toggleAriaExpandedgithub={toggleAriaExpandedgithub} toggleAriaExpandedcodeblocks={toggleAriaExpandedcodeblocks} />
           </div>
         </div>
         <StatusBar />

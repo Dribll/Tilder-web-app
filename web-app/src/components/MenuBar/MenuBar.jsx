@@ -177,7 +177,7 @@ function MenuBar(props) {
             <span className="dropdown-trigger-btn" onClick={props.toggleInfoDisplay}>
               <i className="fa-solid fa-circle-info"></i>
             </span>
-            <span className="dropdown-trigger-btn">
+            <span className="dropdown-trigger-btn" onClick={props.openSettings}>
               <i className="fa-solid fa-sliders"></i>
             </span>
             <span className="dropdown-trigger-btn">

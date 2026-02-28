@@ -1,31 +1,32 @@
-import React from 'react'
-import { Editor } from '@monaco-editor/react';
+import React, { useRef, useEffect } from "react";
+import { Editor } from "@monaco-editor/react";
 
-function MonacoEditor(props) {
-    // console.log(props.code) // ** test purposes **
-    let options = {
-        selectOnLineNumbers: true,
-        roundedSelection: false,
-        readOnly: false,
-        cursorStyle: 'line',
-        automaticLayout: true,
-        minimap: {enabled: true},
-        wordWrapColumn: 82 
-    };
+export default function MonacoEditor({ settings, language, code, MonacoEditorDisplay, monacoEditorStyle }) {
+    // ⭐ SAFETY CHECK
+    if (!settings) return null;
     return (
-        <>
-            <div id="editor-wrapper" style={props.monacoEditorStyle} className={`d-${props.MonacoEditorDisplay}`}>
-                <Editor
-                    theme='vs-dark'
-                    defaultLanguage='python'
-                    options={options}
-                    path='fileName'
-                    language={props.language}
-                    value={props.code}
-                />
-            </div>
-        </>
-    )
-}
 
-export default MonacoEditor;
+        <div id="editor-wrapper" style={monacoEditorStyle} className={`d-${MonacoEditorDisplay}`}>
+
+            <Editor
+
+                theme='vs-dark'
+
+                defaultLanguage={language || "python"}
+
+                path='fileName'
+
+                language={language}
+
+                value={code}
+
+                options={settings}
+
+
+            />
+
+        </div>
+
+    );
+
+}

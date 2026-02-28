@@ -3,8 +3,8 @@
     font-family: 'Ubuntu', sans-serif;
     margin: 0;
     padding: 0;
-    --main-bg-color: rgb(32, 0, 68);
-    --content-box-bg-color: rgb(20, 1, 39);
+    --main-bg-color: rgb(25, 16, 53);
+    --content-box-bg-color: rgb(18, 11, 41);
     --subdropdown-box-bg-color: rgb(32, 0, 58);
     --trigger-btn-dropdown-hover: rgba(72, 48, 177, 0.575);
     --trigger-btn-subdropdown-hover: rgba(72, 48, 177, 0.575);
@@ -18,6 +18,7 @@
     --dialogue-color: rgb(111, 0, 201);
     --dialogue-border-color: 3px solid rgb(25, 25, 113);
     --file-options-hover: rgb(0, 140, 254);
+    --modal-box-color: rgb(42, 58, 77);
 }
 
 body {
@@ -216,6 +217,7 @@ li {
 #editor-wrapper {
     position: absolute;
     z-index: 5;
+    height: 84.7vh;
 }
 
 .reviewbarwrapper {
@@ -301,7 +303,7 @@ li {
 
 .tabswrapper {
     width: auto;
-    height: 5vh;
+    height: 4.2vh;
     flex-direction: row;
     align-items: center;
     margin-bottom: 4px;
@@ -313,8 +315,8 @@ li {
     justify-content: center;
     align-items: center;
     width: auto;
-    height: 5vh;
-    padding: 8px;
+    height: 4.2vh;
+    padding: 10px;
     border-radius: 5px;
     margin-right: 8px;
     cursor: pointer;
@@ -355,7 +357,7 @@ li {
 
 .welcomePageSection {
     width: calc(92vw/2);
-    height: 78.9vh;
+    height: 84.7vh;
     z-index: 3;
 }
 
@@ -371,6 +373,7 @@ li {
 
 .link {
     display: flex;
+    align-items: center;
     flex-direction: row;
     width: 31vw;
     height: 15vh;
@@ -391,6 +394,9 @@ li {
 }
 
 .link-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     margin-left: 1vw;
 }
 
@@ -417,7 +423,7 @@ li {
 }
 
 #infowrpr {
-    background-color: rgba(255, 255, 255, 0.329);
+    background-color: rgba(0, 0, 0, 0.329);
     position: absolute;
     z-index: 11;
     width: 100%;
@@ -474,7 +480,7 @@ input[type="text"] {
 #quick-file-management {
     display: inline-flex;
     flex-direction: column;
-    height: calc(83.5vh - 36.9vh);
+    height: calc(84.7vh - 36.9vh);
 }
 
 .file-options:hover {
@@ -489,6 +495,7 @@ input[type="text"] {
 #mainCodeNavigation {
     display: flex;
     justify-content: space-between;
+    height: 84.7vh;
 }
 
 #newfilewrapper {
@@ -531,12 +538,12 @@ input[type="text"] {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, rgba(60, 43, 211, 0.863), rgba(16, 1, 156, 0.863));
+    background: linear-gradient(180deg, rgba(79, 50, 207, 0.863), rgba(47, 1, 156, 0.863));
     border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(250deg, rgb(39, 29, 173), rgb(17, 1, 156));
+    background: linear-gradient(250deg, rgba(66, 37, 194, 0.863), rgba(38, 0, 126, 0.863));
     border-radius: 10px;
 }
 
@@ -616,12 +623,463 @@ input[type="checkbox"]:checked::after {
     color: var(--file-options-hover)
 }
 
-#contributionp{
+#contributionp {
     padding: 5px;
     font-size: 15.2px;
     font-weight: 100;
 }
 
-.githubicon{
+.githubicon {
+    cursor: auto;
+}
+
+.githubicon:hover {
+    cursor: url('/web-app/githubicon.png') 16 16, pointer;
+}
+
+.modal {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.329);
+}
+
+.modalContainer {
+    display: flex;
+    flex-direction: column;
+    background: #1c1b33;
+    border: 1px solid var(--modal-box-color);
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    align-items: center;
+    width: 70%;
+    height: 80%;
+    border-radius: 10px;
+    gap: 11px;
+}
+
+.topbar {
+    display: flex;
+    margin: 1px;
+    background: #3a335f;
+    border-radius: 10px;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 24px 5px 24px;
+    width: 99%;
+    height: 5%;
+}
+
+.content {
+    height: 92%;
+    width: 99%;
+    border-radius: 5px;
+    background: #131127;
+}
+
+.settingsInput {
+    display: flex !important;
+}
+
+.settings {
+    width: 100%;
+    height: 100%;
+    padding: 0.4vw;
+    gap: 8px;
+}
+
+.settingsCategories {
+    display: flex;
+    justify-content: space-between;
+    flex-direction: column;
+    padding: 8px;
+    width: 10%;
+    background: #aed9ff17;
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+}
+
+.settingsCategoryContents {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    background: #aed9ff17;
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+    padding: 10px;
+    align-self: flex-end;
+}
+
+.settingsCategories {
+    width: 20%;
+    padding: 10px;
+}
+
+/* EACH ITEM */
+.settingsItem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
     cursor: pointer;
+    color: #8b8b8b;
+    transition: all 0.25s ease;
+}
+
+
+/* BULLET DEFAULT */
+.settingsItem .bullet {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #afafaf;
+    transition: all 0.25s ease;
+}
+
+
+/* HOVER EFFECT */
+.settingsItem:hover {
+    color: white;
+    cursor: pointer;
+}
+
+.settingsItem:hover .bullet {
+    background: #ffffff;
+}
+
+
+
+/* ⭐ ACTIVE ITEM */
+.settingsItem.active {
+    font-weight: 600;
+    color: rgb(255, 255, 255);
+}
+
+
+/* ⭐ ACTIVE BULLET */
+.settingsItem.active .bullet {
+    background: rgb(255, 255, 255);
+    transform: scale(1.4);
+}
+
+.modalControlButtons {
+    width: 1.3vw;
+    outline: none;
+    border: none;
+    border-radius: 5px;
+    background: none;
+}
+
+.modalControlButtons:hover {
+    background: rgba(200, 157, 255, 0.192);
+}
+
+.easterEgg {
+    margin-left: -6px;
+    flex-direction: column;
+    overflow: scroll;
+    height: 95% !important;
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 12px;
+}
+
+.settingsInput {
+    color: black;
+    outline: none;
+}
+
+#settingsSearchBar {
+    display: none;
+}
+
+.highlight {
+    animation: highlightFade 1.5s ease;
+}
+
+@keyframes highlightFade {
+    0% {
+        background: rgba(255, 255, 0, 0.5);
+    }
+
+    100% {
+        background: transparent;
+    }
+}
+
+.settingsInputWrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Target only your specific class */
+.settingsInput {
+    display: block;
+    width: 100%;
+    padding: 10px 0;
+    font-size: 16px;
+    font-family: inherit;
+    color: #333;
+
+    /* Reset defaults */
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #d1d1d1;
+    /* Light neutral line */
+    border-radius: 0;
+    outline: none;
+    appearance: none;
+    /* Removes default arrow on selects */
+
+    /* Smooth "Emphasis" transition */
+    transition: border-bottom-color 0.2s ease, border-bottom-width 0.1s ease;
+}
+
+.settingsInput {
+    display: block;
+    width: 50%;
+    /* Use a slightly lighter dark color to pop from the background */
+    background-color: rgba(255, 255, 255, 0.05);
+    color: #ffffff;
+    /* Make text white for your dark theme */
+    padding: 8px 11px;
+    font-size: 15px;
+    /* Smaller font feels more like a pro settings UI */
+    font-family: inherit;
+
+    /* The "Box" look */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    outline: none;
+    box-sizing: border-box;
+    /* Ensures padding doesn't break width */
+
+    /* Transition for the Emphasis */
+    transition: all 0.2s ease-in-out;
+}
+
+/* Hover: subtle border light-up */
+.settingsInput:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* The Emphasis: Stronger border and a subtle glow */
+.settingsInput:focus {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: #3b82f6;
+    /* A nice blue accent (or match your Reset btn) */
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    /* Soft outer emphasis */
+}
+
+/* Fix for Select dropdowns specifically */
+select.settingsInput {
+    cursor: pointer;
+    appearance: auto;
+    /* Restores the arrow so it looks like a standard menu */
+}
+
+/* Style the dropdown list items */
+.settingsInput option {
+    background-color: #1e1e2e;
+    /* Match this to your settings modal color */
+    color: #ffffff;
+    padding: 10px;
+}
+
+/* Specific fix for the 'select' element to ensure text is visible when closed */
+select.settingsInput {
+    color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Remove the default focus blue outline in some browsers */
+.settingsInput:focus option {
+    background-color: #1e1e2e;
+}
+
+@property --btn-grad-start {
+    syntax: '<color>';
+    initial-value: #5d5ab9;
+    inherits: false;
+}
+
+@property --btn-grad-end {
+    syntax: '<color>';
+    initial-value: #5d5ab9;
+    inherits: false;
+}
+
+/* Idle State: Poppy Neon Faded Violet */
+.settingsInput[type="number"] {
+    padding-right: 45px;
+    /* Boxy spacing for the control zone */
+
+    /* Spaced out arrows: m18 5 (Up) and m18 19 (Down) */
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%238a84ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 5-6-6-6 6"/><path d="m18 19-6 6-6-6"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 14px 34px;
+    /* Ensures arrows aren't a blob */
+
+    /* Boxy mechanical feel */
+    box-shadow: inset -40px 0 0 0 rgba(138, 132, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.03);
+    color: white;
+
+    /* Subtle violet glow */
+    filter: drop-shadow(0 0 2px rgba(138, 132, 255, 0.3));
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Active State (Focus): Majestic Neon Sky Blue */
+.settingsInput[type="number"]:focus {
+    /* Brighter Sky Blue Neon */
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2300d9ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m18 5-6-6-6 6"/><path d="m18 19-6 6-6-6"/></svg>');
+
+    /* FIXED: Pure Neon Sky Blue Glow & Border */
+    filter: drop-shadow(0 0 8px rgba(0, 162, 255, 0.7));
+    border-color: #008cff !important;
+    /* Overrides the greenish/purple tints */
+    box-shadow: inset -40px 0 0 0 rgba(0, 217, 255, 0.15), 0 0 15px rgba(0, 217, 255, 0.2);
+
+    outline: none;
+    /* Kills the browser's default green/orange ring */
+}
+
+/* The Functional Hitbox: Fixed for perfect clicking */
+.settingsInput[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 40px;
+    /* Covers the boxy area */
+    height: 100%;
+    cursor: pointer;
+    z-index: 5;
+    margin: 0;
+    display: block;
+    /* Splits top/bottom zones */
+}
+
+.resetBtn {
+    outline: none;
+    border: none;
+    width: 100px;
+    /* Adjusted from 10% for testing, use your preference */
+    height: 40px;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+
+    /* Apply the variables */
+    background: linear-gradient(50deg, var(--btn-grad-start), var(--btn-grad-end));
+
+    /* This will now work because of @property above */
+    transition: --btn-grad-start 1s ease, --btn-grad-end 1s ease;
+}
+
+.resetBtn:hover {
+    --btn-grad-start: #6e2fff;
+    --btn-grad-end: #0059ff;
+}
+
+.resetBtn:active {
+    /* Optional: filter is easier than overriding the whole gradient for a quick click */
+    filter: brightness(0.8);
+}
+
+/* Container for the search bar to handle positioning */
+.settingsSearch {
+    width: 100%;
+    margin-bottom: 5px;
+}
+
+#settingsSearchBar {
+    width: 100%;
+    padding: 10px 16px;
+    font-size: 14px;
+    color: #fff;
+
+    /* Majestic Glass Look */
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 0px;
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+    outline: none;
+
+    /* Smooth transition for that 'majestic' feel */
+    transition:
+        background 0.4s ease,
+        border-color 0.4s ease,
+        box-shadow 0.4s ease,
+        transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    /* Slight pop-out effect */
+}
+
+/* Hover state: subtle hint of life */
+#settingsSearchBar:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* The Focus 'Emphasis' State */
+#settingsSearchBar:focus {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: #5d5ab9;
+    /* Matching your Reset button primary color */
+    transform: translateY(-1px);
+    /* Lifts slightly off the surface */
+
+    /* Soft bloom effect */
+    box-shadow:
+        0 4px 20px rgba(0, 0, 0, 0.4),
+        0 0 0 3px rgba(93, 90, 185, 0.2);
+}
+
+/* Placeholder styling to match the aesthetic */
+#settingsSearchBar::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+    font-weight: 300;
+    transition: opacity 0.3s ease;
+}
+
+#settingsSearchBar:focus::placeholder {
+    opacity: 0.5;
+}
+
+.resetBulk {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: #7875ff;
+    border-radius: 3px;
+}
+
+.resetBulk:hover {
+    background: #8e75ff;
+    transition: 0.3s ease;
+}
+
+.resetdiv{
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-direction: column;
+}
+
+.settingsContentsWrapper{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
