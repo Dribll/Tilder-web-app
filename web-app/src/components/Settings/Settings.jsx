@@ -594,202 +594,249 @@ export default function Settings({ modalType, settings, setSettings }) {
                     <h6 className='settingsItem'>Render Whitespace</h6>
                     <p className="settingsDescription">Controls how whitespace characters are displayed.
                         Options may show spaces and tabs visually.</p>
-
-                    <select
-                        className="settingsInput"
-                        value={settings.renderWhitespace}
-                        onChange={(e) =>
-                            updateSetting("renderWhitespace", e.target.value)
-                        }
-                    >
-                        <option value="none">None</option>
-                        <option value="boundary">Boundary</option>
-                        <option value="all">All</option>
-                    </select> <br />
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.renderWhitespace}
+                            onChange={(e) =>
+                                updateSetting("renderWhitespace", e.target.value)
+                            }
+                        >
+                            <option value="none">None</option>
+                            <option value="boundary">Boundary</option>
+                            <option value="all">All</option>
+                        </select>
+                        <ResetButton name="renderWhitespace" />
+                    </div>
+                    <br />
 
                     <h6 className='settingsItem'>Render Control Characters</h6>
                     <p className="settingsDescription">Enables visualization of control characters like null or escape.
                         Helps identify invisible characters in code.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.renderControlCharacters}
-                        onChange={(e) =>
-                            updateSetting("renderControlCharacters", e.target.value === "true")
-                        }
-                    >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                    </select> <br />
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.renderControlCharacters}
+                            onChange={(e) =>
+                                updateSetting("renderControlCharacters", e.target.value === "true")
+                            }
+                        >
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                        <ResetButton name="renderControlCharacters" />
+                    </div>
+                    <br />
 
                     <h6 className='settingsItem'>Render Line Highlight</h6>
                     <p className="settingsDescription">Highlights the line where the cursor is currently placed.
                         Improves focus while coding.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.renderLineHighlight}
-                        onChange={(e) =>
-                            updateSetting("renderLineHighlight", e.target.value)
-                        }
-                    >
-                        <option value="none">None</option>
-                        <option value="gutter">Gutter</option>
-                        <option value="line">Line</option>
-                        <option value="all">All</option>
-                    </select> <br />
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.renderLineHighlight}
+                            onChange={(e) =>
+                                updateSetting("renderLineHighlight", e.target.value)
+                            }
+                        >
+                            <option value="none">None</option>
+                            <option value="gutter">Gutter</option>
+                            <option value="line">Line</option>
+                            <option value="all">All</option>
+                        </select>
+                        <ResetButton name="renderLineHighlight" />
+                    </div>
+                    <br />
 
                     <h6 className='settingsItem'>Render Indent Guides</h6>
                     <p className="settingsDescription">Shows vertical lines to indicate indentation levels.
                         Helps visualize code structure.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.renderIndentGuides}
-                        onChange={(e) =>
-                            updateSetting("renderIndentGuides", e.target.value === "true")
-                        }
-                    >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                    </select> <br />
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.renderIndentGuides}
+                            onChange={(e) =>
+                                updateSetting("renderIndentGuides", e.target.value === "true")
+                            }
+                        >
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                        <ResetButton name="renderIndentGuides" />
+                    </div>
+                    <br />
 
                     <h6 className='settingsItem'>Render Final Newline</h6>
                     <p className="settingsDescription">Ensures that files end with a newline character.
                         Important for compatibility with certain tools and languages.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.renderFinalNewline}
-                        onChange={(e) =>
-                            updateSetting("renderFinalNewline", e.target.value === "true")
-                        }
-                    >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                    </select> <br />
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.renderFinalNewline}
+                            onChange={(e) =>
+                                updateSetting("renderFinalNewline", e.target.value === "true")
+                            }
+                        >
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                        <ResetButton name="renderFinalNewline" />
+                    </div>
+                    <br />
 
                     <h6 className='settingsItem'>Bracket Pair Colorization</h6>
                     <p className="settingsDescription">Enables color coding of matching brackets.
                         Makes it easier to identify code blocks and nesting.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.bracketPairColorization.enabled}
-                        onChange={(e) =>
-                            setSettings(prev => ({
-                                ...prev,
-                                bracketPairColorization: {
-                                    ...prev.bracketPairColorization,
-                                    enabled: e.target.value === "true"
-                                }
-                            }))
-                        }
-                    >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                    </select> <br />
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.bracketPairColorization.enabled}
+                            onChange={(e) =>
+                                setSettings(prev => ({
+                                    ...prev,
+                                    bracketPairColorization: {
+                                        ...prev.bracketPairColorization,
+                                        enabled: e.target.value === "true"
+                                    }
+                                }))
+                            }
+                        >
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                        <ResetButton name="bracketPairColorization.enabled" />
+                    </div>
+                    <br />
 
                     <h6 className='settingsItem'>Color Decorators</h6>
                     <p className="settingsDescription">Shows color previews for color codes in the editor.
                         Useful for quickly identifying colors in CSS or design files.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.colorDecorators}
-                        onChange={(e) =>
-                            updateSetting("colorDecorators", e.target.value === "true")
-                        }
-                    >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                    </select>
+
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.colorDecorators}
+                            onChange={(e) =>
+                                updateSetting("colorDecorators", e.target.value === "true")
+                            }
+                        >
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                        <ResetButton name="colorDecorators" />
+                    </div>
+                    <br />
 
                     <h6 className='settingsItem'>Code Lens</h6>
                     <p className="settingsDescription">Displays inline information and actions above code lines.
                         Provides quick access to references, tests, and more.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.codeLens}
-                        onChange={(e) =>
-                            updateSetting("codeLens", e.target.value === "true")
-                        }
-                    >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                    </select> <br />
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.codeLens}
+                            onChange={(e) =>
+                                updateSetting("codeLens", e.target.value === "true")
+                            }
+                        >
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                        <ResetButton name="codeLens" />
+                    </div>
+                    <br />
 
                     <h6 className='settingsItem'>Lightbulb</h6>
                     <p className="settingsDescription">Shows a lightbulb icon when code actions are available.
                         Provides quick access to fixes and refactorings.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.lightbulb.enabled}
-                        onChange={(e) =>
-                            setSettings(prev => ({
-                                ...prev,
-                                lightbulb: {
-                                    ...prev.lightbulb,
-                                    enabled: e.target.value === "true"
-                                }
-                            }))
-                        }
-                    >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                    </select> <br />
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.lightbulb.enabled}
+                            onChange={(e) =>
+                                setSettings(prev => ({
+                                    ...prev,
+                                    lightbulb: {
+                                        ...prev.lightbulb,
+                                        enabled: e.target.value === "true"
+                                    }
+                                }))
+                            }
+                        >
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                        <ResetButton name="lightbulb.enabled" />
+                    </div>
+                    <br />
 
                     <h6 className='settingsItem'>Parameter Hints</h6>
                     <p className="settingsDescription">Shows inline hints for function parameters while typing.
                         Helps remember parameter names and types.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.parameterHints.enabled}
-                        onChange={(e) =>
-                            setSettings(prev => ({
-                                ...prev,
-                                parameterHints: {
-                                    ...prev.parameterHints,
-                                    enabled: e.target.value === "true"
-                                }
-                            }))
-                        }
-                    >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                    </select>
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.parameterHints.enabled}
+                            onChange={(e) =>
+                                setSettings(prev => ({
+                                    ...prev,
+                                    parameterHints: {
+                                        ...prev.parameterHints,
+                                        enabled: e.target.value === "true"
+                                    }
+                                }))
+                            }
+                        >
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                        <ResetButton name="parameterHints.enabled" />
+                    </div> <br />
+
 
                     <h6 className='settingsItem'>Guides</h6>
                     <p className="settingsDescription">Enables various visual guides in the editor, such as bracket pair guides and indentation guides.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.guides.indentation}
-                        onChange={(e) =>
-                            setSettings(prev => ({
-                                ...prev,
-                                guides: {
-                                    ...prev.guides,
-                                    indentation: e.target.value === "true"
-                                }
-                            }))
-                        }
-                    >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                    </select> <br />
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.guides.indentation}
+                            onChange={(e) =>
+                                setSettings(prev => ({
+                                    ...prev,
+                                    guides: {
+                                        ...prev.guides,
+                                        indentation: e.target.value === "true"
+                                    }
+                                }))
+                            }
+                        >
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                    </div>
+                    <br />
 
                     <h6 className='settingsItem'>Guides(Bracket pairs)</h6>
                     <p className="settingsDescription">Enables vertical guides for matching brackets, improving code readability.</p>
-                    <select
-                        className="settingsInput"
-                        value={settings.guides.bracketPairs}
-                        onChange={(e) =>
-                            setSettings(prev => ({
-                                ...prev,
-                                guides: {
-                                    ...prev.guides,
-                                    bracketPairs: e.target.value === "true"
-                                }
-                            }))
-                        }
-                    >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                    </select> <br />
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.guides.bracketPairs}
+                            onChange={(e) =>
+                                setSettings(prev => ({
+                                    ...prev,
+                                    guides: {
+                                        ...prev.guides,
+                                        bracketPairs: e.target.value === "true"
+                                    }
+                                }))
+                            }
+                        >
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                        <ResetButton name="guides.bracketPairs" />
+                    </div>
+                    <br />
 
                 </div>
                 <div className={`settingsCategoryContents easterEgg d-${cursorDisplay}`} id='cursor' onClick={toggleCursor}>
@@ -801,17 +848,21 @@ export default function Settings({ modalType, settings, setSettings }) {
                         Controls the visual appearance of the cursor.
                         Options: Line, Block, Underline.
                     </p>
-                    <select
-                        className="settingsInput"
-                        value={settings.cursorStyle}
-                        onChange={(e) =>
-                            updateSetting("cursorStyle", e.target.value)
-                        }
-                    >
-                        <option value="line">Line</option>
-                        <option value="block">Block</option>
-                        <option value="underline">Underline</option>
-                    </select>
+                    <div className="settingsInputWrapper">
+                        <select
+                            className="settingsInput"
+                            value={settings.cursorStyle}
+                            onChange={(e) =>
+                                updateSetting("cursorStyle", e.target.value)
+                            }
+                        >
+                            <option value="line">Line</option>
+                            <option value="block">Block</option>
+                            <option value="underline">Underline</option>
+                        </select>
+                        <ResetButton name="cursorStyle" />
+                    </div>
+
                     <br />
 
                     {/* cursorWidth */}

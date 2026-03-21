@@ -1,23 +1,32 @@
-import React from 'react'
+export default function Tabs({ tabs, activeTabId, setActiveTab, closeTab }) {
+  if (!tabs.length) {
+    return <div className="tabs empty" />;
+  }
 
-export default function Tabs(props) {
   return (
-    <div className={`tabswrapper d-${props.TabsWrapperDisplay}`}>
-      <div className={`tab d-${props.WelcomeTabDisplay}`}>
-        <center>Welcome</center>
-        <button className='tabClose' onClick={props.toggleWelcomePagedisplay}>
-          <i className="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-      {Array.from({ length: props.tabCount }, (_, index) => (
-        <div key={index} className={`tab d-${props.TabDisplay}`}>
-          <center>{props.fileName}</center>
-          <button className='tabClose' onClick={props.toggleWelcomePagedisplay}>
-            <i className="fa-solid fa-xmark"></i>
+    <div className="tabs">
+      {tabs.map((tab) => (
+        <div
+          key={tab.id}
+          className={`tab ${tab.id === activeTabId ? 'active' : ''}`}
+          onClick={() => setActiveTab(tab.id)}
+          title={tab.name}
+        >
+          <span className="tab-name">{tab.name}</span>
+          <span className={`tab-dirty ${tab.dirty ? 'visible' : ''}`}>{tab.dirty ? '*' : ''}</span>
+          <button
+            className="tabClose"
+            type="button"
+            aria-label={`Close ${tab.name}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              closeTab(tab.id);
+            }}
+          >
+            x
           </button>
         </div>
-        
       ))}
     </div>
-  )
+  );
 }

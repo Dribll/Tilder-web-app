@@ -11,13 +11,12 @@ function welcomePage(props) {
                     </div>
                     <div id="quick-file-management">
                         <p className="file-options" onClick={props.triggerNewFile}><i className="fa-solid fa-file-circle-plus"></i> New File</p>
-                        <p className="file-options"><i className="fa-solid fa-folder-plus"></i> New Folder</p>
-                        <p className="file-options form">
+                        <p className="file-options" onClick={props.triggerNewFolder}><i className="fa-solid fa-folder-plus"></i> New Folder</p>
+                        <p className="file-options form" onClick={props.triggerOpenFile}>
                             <i className="fa-solid fa-file-import"></i>
-                            <label className="add-photo-btn" id="welcomePage_openFile" htmlFor="myfile">Open File</label>
-                            <input type="file" id="myfile" name="myfile" onChange={props.handleFileChange} />
+                            <span className="add-photo-btn" id="welcomePage_openFile">Open File</span>
                         </p>
-                        <p className="file-options"><i className="fa-regular fa-folder-open"></i> Open Folder</p>
+                        <p className="file-options" onClick={props.triggerOpenFolder}><i className="fa-regular fa-folder-open"></i> Open Folder</p>
                         <p className="file-options"></p>
                     </div>
                 </div>

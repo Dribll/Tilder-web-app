@@ -1,525 +1,461 @@
-import React, { useState, useEffect, useRef } from 'react';
-import "./App.css";
-import MenuBar from "./components/MenuBar/MenuBar.jsx";
-import SideBar from "./components/SideBar/SideBar.jsx";
-import ReviewBar from "./components/ReviewBar/ReviewBar.jsx";
-import StatusBar from "./components/StatusBar/StatusBar.jsx";
-import Tabs from "./components/Tabs/Tabs.jsx";
-import Search from "./components/SideBar/Main Components/Search/Search.jsx";
-import FilePioneer from "./components/SideBar/Main Components/filePioneer/filePioneer.jsx";
-import GitHub from "./components/SideBar/Main Components/GItHub/GitHub.jsx";
-import Terminal from "./components/SideBar/Main Components/Terminal/Terminal.jsx";
-import Debug from "./components/SideBar/Main Components/Debug/Debug.jsx";
-import CodeBlocks from "./components/SideBar/Main Components/Code Blocks/CodeBlocks.jsx";
-import Git from "./components/SideBar/Main Components/Git/Git.jsx";
-import DefaultPage from "./components/DefaultPage/DefaultPage.jsx";
-import WelcomePage from "./components/WelcomePage/WelcomePage.jsx";
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import './App.css';
+import MenuBar from './components/MenuBar/MenuBar.jsx';
+import SideBar from './components/SideBar/SideBar.jsx';
+import ReviewBar from './components/ReviewBar/ReviewBar.jsx';
+import StatusBar from './components/StatusBar/StatusBar.jsx';
+import Tabs from './components/Tabs/Tabs.jsx';
+import Search from './components/SideBar/Main Components/Search/Search.jsx';
+import FilePioneer from './components/SideBar/Main Components/filePioneer/filePioneer.jsx';
+import GitHub from './components/SideBar/Main Components/GItHub/GitHub.jsx';
+import Terminal from './components/SideBar/Main Components/Terminal/Terminal.jsx';
+import Debug from './components/SideBar/Main Components/Debug/Debug.jsx';
+import CodeBlocks from './components/SideBar/Main Components/Code Blocks/CodeBlocks.jsx';
+import Git from './components/SideBar/Main Components/Git/Git.jsx';
+import DefaultPage from './components/DefaultPage/DefaultPage.jsx';
+import WelcomePage from './components/WelcomePage/WelcomePage.jsx';
 import Info from './components/Info/Info.jsx';
-import NewFile from './components/NewFile/NewFile.jsx';
 import Modal from './components/Modal/Modal.jsx';
 import Settings from './components/Settings/Settings.jsx';
 import Extensions from './components/Extensions/Extensions.jsx';
 import MonacoEditor from './components/Editor/MonacoEditor.jsx';
 import shortcutManager from './components/ShortcutManager.js';
 import defaultSettings from './components/Settings/defaultSettings.js';
+import workspace from './core/workspace.js';
 
-function App(props) {
-
+function App() {
   const [settings, setSettings] = useState(() => {
-    const saved = localStorage.getItem("editorSettings");
+    const saved = localStorage.getItem('editorSettings');
     return saved ? JSON.parse(saved) : defaultSettings;
   });
+  const [activePanel, setActivePanel] = useState('filepioneer');
+  const [infoDisplay, setInfoDisplay] = useState('none');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalType, setModalType] = useState('');
+  const [welcomeTabOpen, setWelcomeTabOpen] = useState(true);
+  const [createFolderRequestNonce, setCreateFolderRequestNonce] = useState(0);
+  const [renameRequestNonce, setRenameRequestNonce] = useState(0);
+  const [, setVersion] = useState(0);
+  const saveTimersRef = useRef({});
+  const editorRef = useRef(null);
+  const modalOpenRef = useRef(modalOpen);
+  const modalTypeRef = useRef(modalType);
 
   useEffect(() => {
-    localStorage.setItem(
-      "editorSettings",
-      JSON.stringify(settings)
-    );
-
+    localStorage.setItem('editorSettings', JSON.stringify(settings));
   }, [settings]);
 
+  useEffect(() => {
+    modalOpenRef.current = modalOpen;
+    modalTypeRef.current = modalType;
+  }, [modalOpen, modalType]);
 
-  let [ariaExpandedisplayfilepioneer, changeariaExpandedisplayfilepioneer] = useState('none');
-  let [ariaExpandedisplaysearch, changeariaExpandedisplaysearch] = useState('none');
-  let [ariaExpandedisplaycodeblocks, changeariaExpandedisplaycodeblocks] = useState('none');
-  let [ariaExpandedisplaydebug, changeariaExpandedisplaydebug] = useState('none');
-  let [ariaExpandedisplayextensions, changeariaExpandedisplayextensions] = useState('none');
-  let [ariaExpandedisplaygit, changeariaExpandedisplaygit] = useState('none');
-  let [ariaExpandedisplayterminal, changeariaExpandedisplayterminal] = useState('none');
-  let [ariaExpandedisplaygithub, changeariaExpandedisplaygithub] = useState('none');
-  let [InfoDisplay, setInfoDisplay] = useState('none');
-  let [TabDisplay, setTabDisplay] = useState('flex');
-  let [WelcomeTabDisplay, setWelcomeTabDisplay] = useState('flex');
-  let [WelcomePageDisplay, setWelcomePageDisplay] = useState('flex');
-  let [DefaultPageDisplay, setDefaultPageDisplay] = useState('none');
-  let [MonacoEditorDisplay, setMonacoEditorDisplay] = useState('none');
-  let [bgOpacityDisplay, setBgOpacityDisplay] = useState('none');
-  let [NewFileVisibility, setNewFileVisibility] = useState('none')
-  let [code, setCode] = useState('');
-  let [file, setFile] = useState();
-  let [language, setLanguage] = useState('python');
-  let [formFileName, setFormFileName] = useState('');
+  function refresh() {
+    setVersion((current) => current + 1);
+  }
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalType, setModalType] = useState("");
+  function closeCurrentModal() {
+    setModalOpen(false);
+    setModalType('');
+  }
 
-  function openSettings() {
-    setModalType("Settings");
-    if (modalOpen == false) {
-      setModalOpen(true);
-    } else {
-      setModalOpen(false);
+  function toggleSettings(nextState) {
+    if (typeof nextState === 'boolean') {
+      if (nextState) {
+        setModalType('Settings');
+        setModalOpen(true);
+      } else if (modalType === 'Settings') {
+        closeCurrentModal();
+      }
+      return;
     }
-  };
+
+    if (modalOpen && modalType === 'Settings') {
+      closeCurrentModal();
+      return;
+    }
+
+    setModalType('Settings');
+    setModalOpen(true);
+  }
+
+  function toggleSettingsFromState() {
+    if (modalOpenRef.current && modalTypeRef.current === 'Settings') {
+      closeCurrentModal();
+      return;
+    }
+
+    setModalType('Settings');
+    setModalOpen(true);
+  }
 
   function openExtensions() {
-    setModalType("Extensions");
-    if (modalOpen == false) {
-      setModalOpen(true);
-    } else {
-      setModalOpen(false);
+    if (modalOpen && modalType === 'Extensions') {
+      closeCurrentModal();
+      return;
     }
-  };
 
-  function closeModal() {
-    setModalOpen(false);
-    setModalType("");
-  };
+    setModalType('Extensions');
+    setModalOpen(true);
+  }
 
-  const [files, setFiles] = useState([]); // Start with an empty array for files
-  const [activeFileId, setActiveFileId] = useState(null); // Initially, no active file
-
-  const CreateNewFile = (event) => {
-    event.preventDefault();
-    console.log(document.getElementById('formFileName_id').value);
-    setFormFileName(document.getElementById('formFileName_id').value);
-    // console.log(formFileName);
-    setNewFileVisibility('none');
-    setMonacoEditorStyle({
-      opacity: '1'
-    })
-    const newFile = {
-      id: files.length + 1,
-      name: `${formFileName}`,
-      content: '',
+  useEffect(() => {
+    return () => {
+      Object.values(saveTimersRef.current).forEach((timerId) => clearTimeout(timerId));
     };
-    setFiles([...files, newFile]);
-    setActiveFileId(newFile.id); // Set the new file as active
-  };
+  }, []);
 
-  const handleTabClick = (id) => {
-    setActiveFileId(id);
-  };
+  const tabs = workspace.tabs;
+  const activeTab = workspace.getActiveTab();
+  const welcomeTab = welcomeTabOpen ? [{ id: '__welcome__', name: 'Welcome', dirty: false }] : [];
+  const visibleTabs = [...welcomeTab, ...tabs];
+  const hasSidebar = activePanel !== null;
+  const maincodeareaStyle = useMemo(
+    () => ({ width: hasSidebar ? '72vw' : '92vw', height: '83.5vh' }),
+    [hasSidebar]
+  );
+  const monacoEditorStyle = useMemo(
+    () => ({ width: hasSidebar ? '72vw' : '92vw', height: '83.5vh', opacity: '1' }),
+    [hasSidebar]
+  );
 
-  const handleEditorChange = (value) => {
-    setFiles((prevFiles) =>
-      prevFiles.map((file) =>
-        file.id === activeFileId ? { ...file, content: value } : file
-      )
-    );
-  };
-
-  const activeFile = files.find((file) => file.id === activeFileId);
-
-  const [TabsWrapperDisplay, setTabsWrapperDisplay] = useState('flex');
-  const toggleWelcomePageDisplay = () => {
-    setDefaultPageDisplay('flex');
-    setTabsWrapperDisplay('none')
-    setWelcomePageDisplay('none');
-  };
-  const toggleAriaExpandedfilepioneer = () => {
-    console.log("clicked");
-    if (ariaExpandedisplayfilepioneer === "none") {
-      // console.log("toggled")
-      changeariaExpandedisplayfilepioneer("flex");
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '72vw',
-      })
-      setMonacoEditorStyle({
-        width: '72vw'
-      })
-    }
-    else {
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '92vw',
-      })
-      setMonacoEditorStyle({
-        width: '92vw'
-      })
-    }
-  };
-  const toggleAriaExpandedsearch = () => {
-    console.log("clicked");
-    if (ariaExpandedisplaysearch === "none") {
-      // console.log("toggled")
-      changeariaExpandedisplaysearch("flex");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '72vw',
-      })
-      setMonacoEditorStyle({
-        width: '72vw'
-      })
-    }
-    else {
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '92vw',
-      })
-      setMonacoEditorStyle({
-        width: '92vw'
-      })
-    }
-  };
-  const toggleAriaExpandedcodeblocks = () => {
-    console.log("clicked");
-    if (ariaExpandedisplaycodeblocks === "none") {
-      // console.log("toggled")
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("flex");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '72vw',
-      })
-      setMonacoEditorStyle({
-        width: '72vw'
-      })
-    }
-    else {
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '92vw',
-      })
-      setMonacoEditorStyle({
-        width: '92vw'
-      })
-    }
-  };
-  const toggleAriaExpandedgithub = () => {
-    console.log("clicked");
-    if (ariaExpandedisplaygithub === "none") {
-      // console.log("toggled")
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("flex");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '72vw',
-      })
-      setMonacoEditorStyle({
-        width: '72vw'
-      })
-    }
-    else {
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '92vw',
-      })
-      setMonacoEditorStyle({
-        width: '92vw'
-      })
-    }
-  };
-  const toggleAriaExpandedgit = () => {
-    console.log("clicked");
-    if (ariaExpandedisplaygit === "none") {
-      // console.log("toggled")
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("flex");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '72vw',
-      })
-      setMonacoEditorStyle({
-        width: '72vw'
-      })
-    }
-    else {
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '92vw',
-      })
-      setMonacoEditorStyle({
-        width: '92vw'
-      })
-    }
-  };
-  const toggleAriaExpandedebug = () => {
-    console.log("clicked");
-    if (ariaExpandedisplaydebug === "none") {
-      // console.log("toggled")
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("flex");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '72vw',
-      })
-      setMonacoEditorStyle({
-        width: '72vw'
-      })
-    }
-    else {
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '92vw',
-      })
-      setMonacoEditorStyle({
-        width: '92vw'
-      })
-    }
-  };
-  const toggleAriaExpandedterminal = () => {
-    console.log("clicked");
-    if (ariaExpandedisplayterminal === "none") {
-      // console.log("toggled")
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("flex");
-      changeMaincodeAreaStyle({
-        width: '72vw',
-      })
-      setMonacoEditorStyle({
-        width: '72vw'
-      })
-    }
-    else {
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '92vw',
-      })
-      setMonacoEditorStyle({
-        width: '92vw'
-      })
-    }
-  };
-  const toggleAriaExpandedextensions = () => {
-    if (ariaExpandedisplayextensions === "none") {
-      // console.log("toggled")
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("flex");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '72vw',
-      })
-      setMonacoEditorStyle({
-        width: '72vw'
-      })
-    }
-    else {
-      changeariaExpandedisplaysearch("none");
-      changeariaExpandedisplayfilepioneer("none");
-      changeariaExpandedisplaycodeblocks("none");
-      changeariaExpandedisplaydebug("none");
-      changeariaExpandedisplayextensions("none");
-      changeariaExpandedisplaygit("none");
-      changeariaExpandedisplaygithub("none");
-      changeariaExpandedisplayterminal("none");
-      changeMaincodeAreaStyle({
-        width: '92vw',
-      })
-      setMonacoEditorStyle({
-        width: '92vw'
-      })
-    }
-  };
-
-  const [monacoEditorStyle, setMonacoEditorStyle] = useState({
-    width: '92vw',
-    height: '83.5vh',
-    opacity: '1'
-  })
-
-  let [maincodeareaStyle, changeMaincodeAreaStyle] = useState({
-    width: '92vw',
-    height: '83.5vh'
-  })
-
-  const toggleInfoDisplay = () => {
-    setInfoDisplay('flex')
-    setBgOpacityDisplay('flex')
+  function onEditorMount(editor) {
+    editorRef.current = editor;
   }
 
-  const triggerInfoClose = () => {
-    setInfoDisplay('none')
-    setBgOpacityDisplay('none')
-  }
-
-  const triggerOpenFile = () => {
-    setDefaultPageDisplay('none')
-    setWelcomePageDisplay('none');
-    setMonacoEditorDisplay('flex');
-    setWelcomeTabDisplay('none');
-    setTabsWrapperDisplay('flex');
-  }
-
-
-
-  const triggerNewFile = () => {
-    setTabsWrapperDisplay('flex');
-    setWelcomeTabDisplay('none');
-    setDefaultPageDisplay('none');
-    setWelcomePageDisplay('none');
-    setMonacoEditorDisplay('flex');
-    setNewFileVisibility('block');
-    setMonacoEditorStyle({
-      width: '92vw',
-      height: '83.5vh',
-      opacity: '0.5'
-    });
-  };
-
-
-  shortcutManager.registerKeys([
-
-    {
-      key: "ctrl+,",
-      toggle: true,
-      action: openSettings
+  function runEditorAction(actionId, fallback) {
+    const editor = editorRef.current;
+    if (!editor) {
+      fallback?.();
+      return;
     }
 
-  ]);
+    editor.focus();
 
+    try {
+      editor.trigger('menu', actionId, null);
+    } catch {
+      fallback?.();
+    }
+  }
+
+  function getCreateParentPath() {
+    const root = workspace.getRootNode();
+    if (!root) {
+      return 'root';
+    }
+
+    const selectedNode = workspace.selectedNodePath ? workspace.findNode(workspace.selectedNodePath) : null;
+    if (selectedNode?.type === 'folder') {
+      return selectedNode.path;
+    }
+
+    if (selectedNode?.type === 'file') {
+      return workspace.findParentPath(selectedNode.path);
+    }
+
+    return root.path;
+  }
+
+  function queueSave(tabId) {
+    const tab = workspace.tabs.find((entry) => entry.id === tabId);
+    if (!tabId || !tab?.handle || tab.isUntitled) {
+      return;
+    }
+
+    clearTimeout(saveTimersRef.current[tabId]);
+    saveTimersRef.current[tabId] = setTimeout(async () => {
+      await workspace.saveTab(tabId);
+      refresh();
+    }, 350);
+  }
+
+  async function handleEditorChange(value) {
+    if (!activeTab) {
+      return;
+    }
+
+    workspace.updateTabContent(activeTab.id, value ?? '');
+    refresh();
+    queueSave(activeTab.id);
+  }
+
+  async function handleOpenFolder() {
+    try {
+      await workspace.openFolderBrowser();
+      setActivePanel('filepioneer');
+      refresh();
+    } catch {
+      // User cancelled the folder picker.
+    }
+  }
+
+  async function handleOpenFileDialog() {
+    try {
+      await workspace.openExternalFile();
+      refresh();
+    } catch {
+      // User cancelled the file picker.
+    }
+  }
+
+  async function handleOpenNode(node) {
+    await workspace.openFile(node);
+    refresh();
+  }
+
+  function handleCreateUntitledFile() {
+    workspace.createUntitledFile(getCreateParentPath());
+    refresh();
+  }
+
+  async function handleCreateFolder() {
+    setActivePanel('filepioneer');
+    workspace.setSelectedNode(getCreateParentPath());
+    setCreateFolderRequestNonce((current) => current + 1);
+    refresh();
+  }
+
+  async function handleSaveActiveFile() {
+    if (!activeTab) {
+      return;
+    }
+
+    try {
+      const saved = await workspace.saveTab(activeTab.id);
+      if (saved) {
+        refresh();
+      }
+    } catch {
+      // User cancelled the save picker.
+    }
+  }
+
+  async function handleSaveAsActiveFile() {
+    if (!activeTab) {
+      return;
+    }
+
+    try {
+      const saved = await workspace.saveTab(activeTab.id, { saveAs: true });
+      if (saved) {
+        refresh();
+      }
+    } catch {
+      // User cancelled the save picker.
+    }
+  }
+
+  async function handleSaveWorkspaceAs() {
+    try {
+      const saved = await workspace.saveWorkspaceAs();
+      if (saved) {
+        refresh();
+      }
+    } catch {
+      // User cancelled the directory picker.
+    }
+  }
+
+  function handleTabClick(id) {
+    if (id === '__welcome__') {
+      workspace.activeTabId = null;
+      refresh();
+      return;
+    }
+
+    workspace.setActiveTab(id);
+    refresh();
+  }
+
+  function handleCloseTab(id) {
+    if (id === '__welcome__') {
+      setWelcomeTabOpen(false);
+      if (!workspace.getActiveTab()) {
+        refresh();
+      }
+      return;
+    }
+
+    const tab = workspace.tabs.find((entry) => entry.id === id);
+    if (tab?.dirty) {
+      const confirmed = window.confirm(`Close ${tab.name} without saving the latest changes?`);
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    delete saveTimersRef.current[id];
+    workspace.closeTab(id);
+    refresh();
+  }
+
+  function toggleInfoDisplay() {
+    setInfoDisplay('flex');
+  }
+
+  function triggerInfoClose() {
+    setInfoDisplay('none');
+  }
+
+  function toggleSidebarPanel(panel) {
+    setActivePanel((current) => (current === panel ? null : panel));
+  }
+
+  function toggleSidebar() {
+    setActivePanel((current) => (current ? null : 'filepioneer'));
+  }
+
+  function handleRenameSelected() {
+    const selectedPath = workspace.selectedNodePath;
+    if (!selectedPath || selectedPath === 'root') {
+      return;
+    }
+    setActivePanel('filepioneer');
+    setRenameRequestNonce((current) => current + 1);
+  }
+
+  useEffect(() => {
+    shortcutManager.registerKeys([
+      {
+        key: 'ctrl+,',
+        action: () => toggleSettingsFromState(),
+      },
+      {
+        key: 'ctrl+b',
+        action: () => setActivePanel((current) => (current ? null : 'filepioneer')),
+      },
+      {
+        key: 'ctrl+n',
+        action: () => handleCreateUntitledFile(),
+      },
+      {
+        key: 'ctrl+shift+n',
+        action: () => handleCreateFolder(),
+      },
+      {
+        key: 'ctrl+s',
+        action: () => handleSaveActiveFile(),
+      },
+      {
+        key: 'ctrl+shift+s',
+        action: () => handleSaveAsActiveFile(),
+      },
+      {
+        key: 'ctrl+o',
+        action: () => handleOpenFileDialog(),
+      },
+      {
+        key: 'ctrl+shift+o',
+        action: () => handleOpenFolder(),
+      },
+      {
+        key: 'f2',
+        action: () => handleRenameSelected(),
+      },
+      {
+        key: 'ctrl+h',
+        action: () => runEditorAction('editor.action.startFindReplaceAction'),
+      },
+      {
+        key: 'ctrl+f',
+        action: () => runEditorAction('actions.find'),
+      },
+    ]);
+  }, [modalOpen, modalType, activePanel, activeTab?.id, workspace.selectedNodePath]);
+
+  const panelDisplay = (panel) => (activePanel === panel ? 'flex' : 'none');
+  const showWelcomePage = !activeTab && welcomeTabOpen;
+  const showDefaultPage = !activeTab && !welcomeTabOpen;
+  const tabActiveId = activeTab ? workspace.activeTabId : (welcomeTabOpen ? '__welcome__' : null);
 
   return (
     <>
-      <Info triggerInfoClose={triggerInfoClose} InfoDisplay={InfoDisplay} />
-      <Modal isOpen={modalOpen} closeModal={closeModal} title={modalType}>
+      <Info triggerInfoClose={triggerInfoClose} InfoDisplay={infoDisplay} />
+      <Modal isOpen={modalOpen} closeModal={closeCurrentModal} title={modalType}>
         <Settings modalType={modalType} settings={settings} setSettings={setSettings} />
         <Extensions modalType={modalType} />
       </Modal>
       <div id="mainProductivityArea">
-        <MenuBar toggleInfoDisplay={toggleInfoDisplay} triggerNewFile={triggerNewFile} openSettings={openSettings} openExtensions={openExtensions} triggerOpenFile={triggerOpenFile} />
+        <MenuBar
+          toggleInfoDisplay={toggleInfoDisplay}
+          triggerNewFile={handleCreateUntitledFile}
+          triggerNewFolder={handleCreateFolder}
+          openSettings={toggleSettings}
+          openExtensions={openExtensions}
+          triggerOpenFile={handleOpenFileDialog}
+          triggerOpenFolder={handleOpenFolder}
+          saveActiveFile={handleSaveActiveFile}
+          saveAsActiveFile={handleSaveAsActiveFile}
+          saveWorkspaceAs={handleSaveWorkspaceAs}
+          undo={() => runEditorAction('undo')}
+          redo={() => runEditorAction('redo')}
+          cut={() => runEditorAction('editor.action.clipboardCutAction', () => document.execCommand('cut'))}
+          copy={() => runEditorAction('editor.action.clipboardCopyAction', () => document.execCommand('copy'))}
+          paste={() => runEditorAction('editor.action.clipboardPasteAction', () => document.execCommand('paste'))}
+          selectAll={() => runEditorAction('editor.action.selectAll', () => document.execCommand('selectAll'))}
+          find={() => runEditorAction('actions.find')}
+          replace={() => runEditorAction('editor.action.startFindReplaceAction')}
+        />
         <div className="mainsect">
           <div className="codewrpr">
             <ReviewBar />
             <div className="maincodearea" style={maincodeareaStyle}>
-              <DefaultPage DefaultPageDisplay={DefaultPageDisplay} dimensionsDefaultPage={maincodeareaStyle} />
-              <Tabs
-                TabDisplay={TabDisplay}
-                WelcomeTabDisplay={WelcomeTabDisplay}
-                toggleWelcomePagedisplay={toggleWelcomePageDisplay}
-                TabsWrapperDisplay={TabsWrapperDisplay}
-                files={files}
-                activeFileId={activeFileId}
-                onTabClick={handleTabClick}
-
-              />
-              {activeFile && (
+              <Tabs tabs={visibleTabs} activeTabId={tabActiveId} setActiveTab={handleTabClick} closeTab={handleCloseTab} />
+              {activeTab ? (
                 <MonacoEditor
-                  value={activeFile.content}
+                  key={activeTab.id}
+                  tab={activeTab}
                   onChange={handleEditorChange}
+                  onMount={onEditorMount}
                   settings={settings}
+                  MonacoEditorDisplay="flex"
+                  monacoEditorStyle={monacoEditorStyle}
                 />
-              )}
-              <WelcomePage DimensionsWelcomePage={maincodeareaStyle} WelcomePageDisplay={WelcomePageDisplay} triggerNewFile={triggerNewFile} />
-              <div id="mainCodeNavigation">
-                <NewFile NewFileVisibility={NewFileVisibility} CreateNewFile={CreateNewFile} />
-                <MonacoEditor monacoEditorStyle={monacoEditorStyle} code={code} language={language} MonacoEditorDisplay={MonacoEditorDisplay} settings={settings} />
-              </div>
+              ) : null}
+              {showDefaultPage ? <DefaultPage DefaultPageDisplay="flex" dimensionsDefaultPage={maincodeareaStyle} /> : null}
+              {showWelcomePage ? (
+                <WelcomePage
+                  DimensionsWelcomePage={maincodeareaStyle}
+                  WelcomePageDisplay="flex"
+                  triggerNewFile={handleCreateUntitledFile}
+                  triggerOpenFolder={handleOpenFolder}
+                  triggerOpenFile={handleOpenFileDialog}
+                  triggerNewFolder={handleCreateFolder}
+                />
+              ) : null}
             </div>
           </div>
           <div className="SideBarmainwrper">
-            <CodeBlocks ariaExpandedisplaycodeblocks={ariaExpandedisplaycodeblocks} />
-            <Terminal ariaExpandedisplayterminal={ariaExpandedisplayterminal} />
-            <Git ariaExpandedisplaygit={ariaExpandedisplaygit} />
-            <Extensions ariaExpandedisplayextensions={ariaExpandedisplayextensions} />
-            <GitHub ariaExpandedisplaygithub={ariaExpandedisplaygithub} />
-            <Debug ariaExpandedisplaydebug={ariaExpandedisplaydebug} />
-            <Search ariaExpandedisplaysearch={ariaExpandedisplaysearch} />
-            <FilePioneer ariaExpandedisplayfilepioneer={ariaExpandedisplayfilepioneer} />
-            <SideBar toggleAriaExpandedfilepioneer={toggleAriaExpandedfilepioneer} toggleAriaExpandedsearch={toggleAriaExpandedsearch} toggleAriaExpandedextensions={openExtensions} toggleAriaExpandedterminal={toggleAriaExpandedterminal} toggleAriaExpandedebug={toggleAriaExpandedebug} toggleAriaExpandedgit={toggleAriaExpandedgit} toggleAriaExpandedgithub={toggleAriaExpandedgithub} toggleAriaExpandedcodeblocks={toggleAriaExpandedcodeblocks} />
+            <CodeBlocks ariaExpandedisplaycodeblocks={panelDisplay('codeblocks')} />
+            <Terminal ariaExpandedisplayterminal={panelDisplay('terminal')} />
+            <Git ariaExpandedisplaygit={panelDisplay('git')} />
+            <Extensions ariaExpandedisplayextensions={panelDisplay('extensions')} />
+            <GitHub ariaExpandedisplaygithub={panelDisplay('github')} />
+            <Debug ariaExpandedisplaydebug={panelDisplay('debug')} />
+            <Search ariaExpandedisplaysearch={panelDisplay('search')} />
+            <FilePioneer
+              ariaExpandedisplayfilepioneer={panelDisplay('filepioneer')}
+              workspace={workspace}
+              openFile={handleOpenNode}
+              createUntitledFile={handleCreateUntitledFile}
+              closeTab={handleCloseTab}
+              refresh={refresh}
+              activeTabId={workspace.activeTabId}
+              triggerOpenFolder={handleOpenFolder}
+              createFolderRequestNonce={createFolderRequestNonce}
+              renameRequestNonce={renameRequestNonce}
+            />
+            <SideBar
+              toggleAriaExpandedfilepioneer={() => toggleSidebarPanel('filepioneer')}
+              toggleAriaExpandedsearch={() => toggleSidebarPanel('search')}
+              toggleAriaExpandedextensions={openExtensions}
+              toggleAriaExpandedterminal={() => toggleSidebarPanel('terminal')}
+              toggleAriaExpandedebug={() => toggleSidebarPanel('debug')}
+              toggleAriaExpandedgit={() => toggleSidebarPanel('git')}
+              toggleAriaExpandedgithub={() => toggleSidebarPanel('github')}
+              toggleAriaExpandedcodeblocks={() => toggleSidebarPanel('codeblocks')}
+            />
           </div>
         </div>
         <StatusBar />
