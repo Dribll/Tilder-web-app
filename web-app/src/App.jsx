@@ -35,9 +35,20 @@ function App() {
   const [welcomeTabOpen, setWelcomeTabOpen] = useState(true);
   const [createFolderRequestNonce, setCreateFolderRequestNonce] = useState(0);
   const [renameRequestNonce, setRenameRequestNonce] = useState(0);
+  const [editorStatus, setEditorStatus] = useState({
+    line: 1,
+    column: 1,
+    selectionLength: 0,
+    selectedLines: 0,
+    eol: 'LF',
+    tabSize: defaultSettings.tabSize,
+    insertSpaces: defaultSettings.insertSpaces,
+  });
   const [, setVersion] = useState(0);
   const saveTimersRef = useRef({});
   const editorRef = useRef(null);
+  const monacoRef = useRef(null);
+  const editorListenersCleanupRef = useRef(() => {});
   const modalOpenRef = useRef(modalOpen);
   const modalTypeRef = useRef(modalType);
 
@@ -102,6 +113,7 @@ function App() {
   useEffect(() => {
     return () => {
       Object.values(saveTimersRef.current).forEach((timerId) => clearTimeout(timerId));
+      editorListenersCleanupRef.current();
     };
   }, []);
 
@@ -111,16 +123,66 @@ function App() {
   const visibleTabs = [...welcomeTab, ...tabs];
   const hasSidebar = activePanel !== null;
   const maincodeareaStyle = useMemo(
-    () => ({ width: hasSidebar ? '72vw' : '92vw', height: '83.5vh' }),
+    () => ({ width: hasSidebar ? '72vw' : '92vw', height: '88.5vh' }),
     [hasSidebar]
   );
   const monacoEditorStyle = useMemo(
-    () => ({ width: hasSidebar ? '72vw' : '92vw', height: '83.5vh', opacity: '1' }),
+    () => ({ width: hasSidebar ? '72vw' : '92vw', height: '88.5vh', opacity: '1' }),
     [hasSidebar]
   );
 
-  function onEditorMount(editor) {
+  function syncEditorStatus(editorInstance = editorRef.current) {
+    const editor = editorInstance;
+    const model = editor?.getModel?.();
+
+    if (!editor || !model) {
+      setEditorStatus({
+        line: 1,
+        column: 1,
+        selectionLength: 0,
+        selectedLines: 0,
+        eol: 'LF',
+        tabSize: defaultSettings.tabSize,
+        insertSpaces: defaultSettings.insertSpaces,
+      });
+      return;
+    }
+
+    const position = editor.getPosition?.() || { lineNumber: 1, column: 1 };
+    const selection = editor.getSelection?.();
+    const selectionText = selection ? model.getValueInRange(selection) : '';
+    const modelOptions = model.getOptions?.() || {};
+
+    setEditorStatus({
+      line: position.lineNumber,
+      column: position.column,
+      selectionLength: selectionText.length,
+      selectedLines: selection && !selection.isEmpty() ? selection.endLineNumber - selection.startLineNumber + 1 : 0,
+      eol: model.getEOL() === '\r\n' ? 'CRLF' : 'LF',
+      tabSize: modelOptions.tabSize ?? defaultSettings.tabSize,
+      insertSpaces: modelOptions.insertSpaces ?? defaultSettings.insertSpaces,
+    });
+  }
+
+  function onEditorMount(editor, monaco) {
+    editorListenersCleanupRef.current();
     editorRef.current = editor;
+    monacoRef.current = monaco;
+
+    const update = () => syncEditorStatus(editor);
+    const model = editor.getModel?.();
+    const listeners = [
+      editor.onDidChangeCursorPosition(update),
+      editor.onDidChangeCursorSelection(update),
+      model?.onDidChangeContent(update),
+      model?.onDidChangeOptions(update),
+    ].filter(Boolean);
+
+    editorListenersCleanupRef.current = () => {
+      listeners.forEach((listener) => listener.dispose());
+    };
+
+    update();
   }
 
   function runEditorAction(actionId, fallback) {
@@ -177,7 +239,61 @@ function App() {
 
     workspace.updateTabContent(activeTab.id, value ?? '');
     refresh();
+    syncEditorStatus();
     queueSave(activeTab.id);
+  }
+
+  function handleGoToLine() {
+    runEditorAction('editor.action.gotoLine');
+  }
+
+  function handleSetLanguage(language) {
+    const tab = workspace.getActiveTab();
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!tab || !editor || !monaco) {
+      return;
+    }
+
+    tab.language = language;
+    const model = editor.getModel?.();
+    if (model) {
+      monaco.editor.setModelLanguage(model, language);
+    }
+    refresh();
+  }
+
+  function handleSetIndentation({ insertSpaces, tabSize }) {
+    const tab = workspace.getActiveTab();
+    const editor = editorRef.current;
+    const model = editor?.getModel?.();
+    if (!tab || !editor || !model) {
+      return;
+    }
+
+    tab.insertSpaces = insertSpaces;
+    tab.tabSize = tabSize;
+    model.updateOptions({ insertSpaces, tabSize, indentSize: tabSize });
+    editor.updateOptions({ insertSpaces, tabSize });
+    syncEditorStatus(editor);
+    refresh();
+  }
+
+  function handleSetEol(eol) {
+    const tab = workspace.getActiveTab();
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const model = editor?.getModel?.();
+    if (!tab || !editor || !model || !monaco) {
+      return;
+    }
+
+    tab.eol = eol;
+    model.setEOL(eol === 'CRLF' ? monaco.editor.EndOfLineSequence.CRLF : monaco.editor.EndOfLineSequence.LF);
+    workspace.updateTabContent(tab.id, editor.getValue());
+    syncEditorStatus(editor);
+    refresh();
+    queueSave(tab.id);
   }
 
   async function handleOpenFolder() {
@@ -314,6 +430,21 @@ function App() {
     setActivePanel('filepioneer');
     setRenameRequestNonce((current) => current + 1);
   }
+
+  useEffect(() => {
+    if (!activeTab) {
+      editorListenersCleanupRef.current();
+      setEditorStatus({
+        line: 1,
+        column: 1,
+        selectionLength: 0,
+        selectedLines: 0,
+        eol: 'LF',
+        tabSize: defaultSettings.tabSize,
+        insertSpaces: defaultSettings.insertSpaces,
+      });
+    }
+  }, [activeTab?.id]);
 
   useEffect(() => {
     shortcutManager.registerKeys([
@@ -458,7 +589,15 @@ function App() {
             />
           </div>
         </div>
-        <StatusBar />
+        <StatusBar
+          activeTab={activeTab}
+          rootName={workspace.rootName || workspace.getRootNode()?.name || ''}
+          status={editorStatus}
+          onGoToLine={handleGoToLine}
+          onSetLanguage={handleSetLanguage}
+          onSetIndentation={handleSetIndentation}
+          onSetEol={handleSetEol}
+        />
       </div>
     </>
   );

@@ -1,4 +1,125 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import {
+  HiDocumentText,
+  HiFolder,
+  HiOutlineBeaker,
+  HiOutlineCog6Tooth,
+  HiOutlineCube,
+  HiOutlineDocument,
+  HiOutlineFolder,
+  HiOutlineGlobeAlt,
+  HiOutlinePhoto,
+  HiOutlineServerStack,
+  HiOutlineSwatch,
+  HiOutlineWrenchScrewdriver,
+} from 'react-icons/hi2';
+import { FaJava } from 'react-icons/fa6';
+import {
+  SiCss,
+  SiGit,
+  SiHtml5,
+  SiJavascript,
+  SiJsonwebtokens,
+  SiMarkdown,
+  SiNpm,
+  SiPhp,
+  SiPython,
+  SiReact,
+  SiRuby,
+  SiRust,
+  SiSass,
+  SiTypescript,
+  SiVite,
+} from 'react-icons/si';
+import { TbBinaryTree2, TbLayoutNavbar, TbLayoutSidebarRight } from 'react-icons/tb';
+import { PiBracketsCurlyBold } from 'react-icons/pi';
+
+function getFolderVisual(name = '') {
+  const normalized = name.toLowerCase();
+
+  const map = {
+    src: { Icon: TbBinaryTree2, color: '#4fc3f7' },
+    core: { Icon: PiBracketsCurlyBold, color: '#7aa2ff' },
+    components: { Icon: HiOutlineCube, color: '#4dd0c8' },
+    settings: { Icon: HiOutlineCog6Tooth, color: '#c792ea' },
+    sidebar: { Icon: TbLayoutSidebarRight, color: '#8ab4ff' },
+    statusbar: { Icon: TbLayoutNavbar, color: '#8ab4ff' },
+    tabs: { Icon: HiOutlineFolder, color: '#8ab4ff' },
+    welcomepage: { Icon: HiOutlineFolder, color: '#7de4ff' },
+    pages: { Icon: HiOutlineFolder, color: '#7de4ff' },
+    public: { Icon: HiOutlineGlobeAlt, color: '#58d7c7' },
+    assets: { Icon: HiOutlinePhoto, color: '#58d7c7' },
+    images: { Icon: HiOutlinePhoto, color: '#58d7c7' },
+    icons: { Icon: HiOutlinePhoto, color: '#58d7c7' },
+    styles: { Icon: HiOutlineSwatch, color: '#ff88d4' },
+    css: { Icon: HiOutlineSwatch, color: '#ff88d4' },
+    hooks: { Icon: HiOutlineWrenchScrewdriver, color: '#ffc56d' },
+    utils: { Icon: HiOutlineWrenchScrewdriver, color: '#ffc56d' },
+    lib: { Icon: HiOutlineWrenchScrewdriver, color: '#ffc56d' },
+    services: { Icon: HiOutlineServerStack, color: '#6eb7ff' },
+    service: { Icon: HiOutlineServerStack, color: '#6eb7ff' },
+    api: { Icon: HiOutlineServerStack, color: '#6eb7ff' },
+    filesystem: { Icon: HiOutlineFolder, color: '#c7d0e4' },
+    config: { Icon: HiOutlineCog6Tooth, color: '#c792ea' },
+    test: { Icon: HiOutlineBeaker, color: '#ff9d73' },
+    tests: { Icon: HiOutlineBeaker, color: '#ff9d73' },
+    node_modules: { Icon: HiOutlineCube, color: '#7fd36d' },
+  };
+
+  return map[normalized] || { Icon: HiFolder, color: '#f0c65e' };
+}
+
+function getFileVisual(name = '') {
+  const normalized = name.toLowerCase();
+  const extension = normalized.includes('.') ? normalized.split('.').pop() : '';
+
+  const exactMap = {
+    'package.json': { Icon: SiNpm, color: '#7fd36d' },
+    'package-lock.json': { Icon: SiNpm, color: '#7fd36d' },
+    'vite.config.js': { Icon: SiVite, color: '#c056ff' },
+    'vite.config.ts': { Icon: SiVite, color: '#c056ff' },
+    '.gitignore': { Icon: SiGit, color: '#f1502f' },
+    'readme.md': { Icon: SiMarkdown, color: '#cfd6ea' },
+    'app.jsx': { Icon: SiReact, color: '#61dafb' },
+    'main.jsx': { Icon: SiReact, color: '#61dafb' },
+    'index.css': { Icon: SiCss, color: '#42a5f5' },
+    'workspace.js': { Icon: SiJavascript, color: '#f7df1e' },
+  };
+
+  if (exactMap[normalized]) {
+    return exactMap[normalized];
+  }
+
+  const typeMap = {
+    js: { Icon: SiJavascript, color: '#f7df1e' },
+    jsx: { Icon: SiReact, color: '#61dafb' },
+    ts: { Icon: SiTypescript, color: '#4ea1ff' },
+    tsx: { Icon: SiReact, color: '#61dafb' },
+    html: { Icon: SiHtml5, color: '#ff8a5b' },
+    css: { Icon: SiCss, color: '#42a5f5' },
+    scss: { Icon: SiSass, color: '#ff88d4' },
+    json: { Icon: SiJsonwebtokens, color: '#c792ea' },
+    md: { Icon: SiMarkdown, color: '#cfd6ea' },
+    py: { Icon: SiPython, color: '#ffd43b' },
+    java: { Icon: FaJava, color: '#ff9b6b' },
+    php: { Icon: SiPhp, color: '#8892bf' },
+    rb: { Icon: SiRuby, color: '#ff6b6b' },
+    rs: { Icon: SiRust, color: '#dea584' },
+    sql: { Icon: HiOutlineServerStack, color: '#5eead4' },
+    sh: { Icon: HiDocumentText, color: '#94a3ff' },
+    png: { Icon: HiOutlinePhoto, color: '#4dd0c8' },
+    jpg: { Icon: HiOutlinePhoto, color: '#4dd0c8' },
+    jpeg: { Icon: HiOutlinePhoto, color: '#4dd0c8' },
+    gif: { Icon: HiOutlinePhoto, color: '#4dd0c8' },
+    svg: { Icon: HiOutlinePhoto, color: '#4dd0c8' },
+    webp: { Icon: HiOutlinePhoto, color: '#4dd0c8' },
+    lock: { Icon: HiOutlineDocument, color: '#c792ea' },
+    env: { Icon: HiOutlineDocument, color: '#c792ea' },
+    txt: { Icon: HiDocumentText, color: '#cfd6ea' },
+  };
+
+  return typeMap[extension] || { Icon: HiOutlineDocument, color: '#cfd6ea' };
+}
 
 function InlineCreateRow({ pendingAction, draftName, setDraftName, submitCreate, cancelCreate, depth = 0 }) {
   return (
@@ -57,6 +178,8 @@ function TreeNode({
   const isActive = activeTabId === node.path;
   const isRenaming = pendingAction?.mode === 'rename' && pendingAction.path === node.path;
   const showsInlineCreate = pendingAction?.mode === 'create' && pendingAction.parentPath === node.path;
+  const folderVisual = isFolder ? getFolderVisual(node.name) : null;
+  const fileVisual = !isFolder ? getFileVisual(node.name) : null;
 
   async function submitRename() {
     if (!renameValue.trim()) {
@@ -97,19 +220,19 @@ function TreeNode({
     <div>
       <div
         className={`explorer-node ${isSelected ? 'selected' : ''} ${isActive ? 'active' : ''}`}
-        style={{ paddingLeft: `${depth * 14 + 10}px` }}
+        style={{ paddingLeft: `${depth * 6}px` }}
         onClick={handleActivate}
       >
         <div className="explorer-node-main">
           <span className="explorer-node-icon" aria-hidden="true">
-            {isFolder ? (
-              <i className={`fa-solid ${node.open ? 'fa-chevron-down' : 'fa-chevron-right'}`}></i>
-            ) : (
-              <i className="fa-solid fa-circle"></i>
-            )}
+            {isFolder ? (node.open ? '\u25BE' : '\u25B8') : ''}
           </span>
-          <span className="explorer-node-type" aria-hidden="true">
-            <i className={`fa-regular ${isFolder ? 'fa-folder' : 'fa-file-lines'}`}></i>
+          <span className={`explorer-node-type ${isFolder ? 'explorer-folder-type' : 'explorer-file-type'}`} aria-hidden="true">
+            {isFolder ? (
+              <folderVisual.Icon className="explorer-folder-icon" color={folderVisual.color} />
+            ) : (
+              <fileVisual.Icon className="explorer-file-icon" color={fileVisual.color} />
+            )}
           </span>
           {isRenaming ? (
             <input
@@ -253,27 +376,46 @@ export default function FilePioneer({
 
   const title = useMemo(() => (root ? workspace.rootName || root.name : 'No folder opened'), [root, workspace.rootName]);
 
+  function expandPath(path) {
+    if (!path) {
+      return;
+    }
+
+    const segments = path === 'root' ? ['root'] : ['root', ...path.split('/').map((_, index, parts) => parts.slice(0, index + 1).join('/'))];
+
+    segments.forEach((segment) => {
+      workspace.expandedPaths.add(segment);
+      const node = workspace.findNode(segment);
+      if (node?.type === 'folder') {
+        node.open = true;
+      }
+    });
+  }
+
   function startCreate(parentPath, type) {
     if (!workspace.getRootNode()) {
       workspace.ensureDraftRoot();
     }
 
     workspace.setSelectedNode(parentPath);
-    workspace.expandedPaths.add(parentPath);
+    expandPath(parentPath);
     setPendingAction({ mode: 'create', parentPath, type });
     setDraftName(type === 'file' ? 'new-file.txt' : 'new-folder');
   }
 
   function resolveCreateParentPath() {
-    if (!root) {
+    const liveRoot = workspace.getRootNode();
+    const liveSelectedPath = workspace.selectedNodePath;
+
+    if (!liveRoot) {
       return null;
     }
 
-    if (!selectedPath || selectedPath === 'root') {
-      return root.path;
+    if (!liveSelectedPath || liveSelectedPath === 'root') {
+      return liveRoot.path;
     }
 
-    const selectedNode = workspace.findNode(selectedPath);
+    const selectedNode = workspace.findNode(liveSelectedPath);
     if (selectedNode?.type === 'folder') {
       return selectedNode.path;
     }
@@ -282,7 +424,7 @@ export default function FilePioneer({
       return workspace.findParentPath(selectedNode.path);
     }
 
-    return root.path;
+    return liveRoot.path;
   }
 
   function startRename(node) {
@@ -452,15 +594,19 @@ export default function FilePioneer({
             <p>Create files and folders in a draft workspace here, or open an existing folder. Save individual files or use Save Workspace As later.</p>
           </div>
         ) : (
-          <div className="explorer-section explorer-tree-section">
+          <div
+            className="explorer-section explorer-tree-section"
+            onClick={(event) => {
+              if (event.target.closest('.explorer-node, .explorer-inline-create')) {
+                return;
+              }
+
+              workspace.setSelectedNode('root');
+              refresh();
+            }}
+          >
             <div className="explorer-section-title">FILES</div>
-            <div
-              className="explorer-tree"
-              onClick={() => {
-                workspace.setSelectedNode('root');
-                refresh();
-              }}
-            >
+            <div className="explorer-tree">
               {pendingAction?.mode === 'create' && pendingAction.parentPath === 'root' ? (
                 <InlineCreateRow
                   pendingAction={pendingAction}
@@ -497,5 +643,3 @@ export default function FilePioneer({
     </div>
   );
 }
-
-

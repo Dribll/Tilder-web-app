@@ -17,6 +17,8 @@ export default function MonacoEditor({ settings, tab, onChange, onMount, MonacoE
         onMount={onMount}
         options={{
           ...settings,
+          tabSize: tab.tabSize ?? settings.tabSize,
+          insertSpaces: tab.insertSpaces ?? settings.insertSpaces,
           automaticLayout: true,
           suggestOnTriggerCharacters: true,
           quickSuggestions: true,

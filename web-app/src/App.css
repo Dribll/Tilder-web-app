@@ -263,22 +263,115 @@ li {
 }
 
 .areastatusBarWrapper {
-    margin-top: 0.6vh;
+    margin-top: 0;
     display: flex;
     width: auto;
-    height: 3vh;
+    height: 34px;
     justify-content: center;
     align-items: center;
 }
 
 .statusBarWrapper {
+    position: relative;
     border-bottom-left-radius: 6px;
     border-bottom-right-radius: 6px;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     width: 98vw;
-    height: 3vh;
+    min-height: 34px;
     background-color: var(--main-bg-color);
+}
+
+.statusbar-main {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.statusbar-left,
+.statusbar-right {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.statusbar-badge,
+.statusbar-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 0 10px;
+    border: none;
+    background: transparent;
+    color: #e7ecff;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.statusbar-badge {
+    background: rgba(142, 137, 255, 0.18);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.statusbar-item.subtle {
+    color: rgba(223, 229, 255, 0.75);
+}
+
+button.statusbar-item {
+    cursor: pointer;
+}
+
+button.statusbar-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.statusbar-menu {
+    position: absolute;
+    right: 10px;
+    bottom: calc(100% + 8px);
+    width: 220px;
+    max-height: 300px;
+    overflow: auto;
+    border-radius: 10px;
+    border: 1px solid rgba(122, 118, 207, 0.22);
+    background: linear-gradient(180deg, rgba(20, 21, 37, 0.98), rgba(12, 13, 23, 0.98));
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+    z-index: 30;
+}
+
+.statusbar-menu-title {
+    padding: 10px 12px 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(223, 229, 255, 0.58);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.statusbar-menu-items {
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+}
+
+.statusbar-menu-item {
+    border: none;
+    background: transparent;
+    color: #edf1ff;
+    text-align: left;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+}
+
+.statusbar-menu-item:hover,
+.statusbar-menu-item.active {
+    background: rgba(142, 137, 255, 0.18);
 }
 
 .fa-chevron-right {
@@ -1327,6 +1420,8 @@ select.settingsInput {
 }
 
 .explorer-tree {
+    flex: 1;
+    min-height: 0;
     overflow: auto;
     padding: 8px 0 12px;
 }
@@ -1396,20 +1491,45 @@ select.settingsInput {
 }
 
 .explorer-node-icon {
-    width: 12px;
-    color: rgba(255, 255, 255, 0.55);
+    width: 16px;
+    color: rgba(229, 232, 255, 0.8);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    flex-shrink: 0;
 }
 
 .explorer-node-type {
-    width: 18px;
+    width: 16px;
+    height: 16px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: rgba(218, 201, 255, 0.88);
+    flex-shrink: 0;
+}
+
+.explorer-folder-type {
+    font-size: 17px;
+}
+
+.explorer-folder-type svg,
+.explorer-folder-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.explorer-file-type {
+    width: 14px;
+    height: 16px;
+}
+
+.explorer-file-type svg,
+.explorer-file-icon {
+    width: 14px;
+    height: 16px;
+    flex-shrink: 0;
 }
 
 .explorer-node-name {
@@ -1425,7 +1545,7 @@ select.settingsInput {
 }
 
 .explorer-node:hover .explorer-node-actions,
-.explorer-node.selected .explorer-node-actions {
+.explorer-node.active .explorer-node-actions {
     display: flex;
 }
 
@@ -1447,41 +1567,41 @@ select.settingsInput {
 
 /* Minimal Black Violet Theme Refresh */
 * {
-    --main-bg-color: #15101f;
-    --content-box-bg-color: #1d1728;
-    --subdropdown-box-bg-color: #251d33;
-    --trigger-btn-dropdown-hover: rgba(148, 112, 226, 0.18);
-    --trigger-btn-subdropdown-hover: rgba(148, 112, 226, 0.18);
-    --sidebar-icons-hover: rgba(139, 100, 201, 0.18);
-    --li-hover: #e8ddff;
-    --a-hover: #e8ddff;
-    --tab-bg-color: #231936;
-    --body-main-bg-color: #06070b;
-    --welcome-page: #0d0a14;
-    --fa-primary-color: #bc92ff;
-    --dialogue-color: #ad84ff;
-    --dialogue-border-color: 1px solid rgba(173, 132, 255, 0.24);
-    --file-options-hover: #d5bbff;
-    --modal-box-color: rgba(173, 132, 255, 0.22);
+    --main-bg-color: #10131a;
+    --content-box-bg-color: #171a28;
+    --subdropdown-box-bg-color: #1d2032;
+    --trigger-btn-dropdown-hover: rgba(122, 116, 208, 0.16);
+    --trigger-btn-subdropdown-hover: rgba(122, 116, 208, 0.16);
+    --sidebar-icons-hover: rgba(108, 104, 194, 0.18);
+    --li-hover: #e4ecff;
+    --a-hover: #e4ecff;
+    --tab-bg-color: #1b1d33;
+    --body-main-bg-color: #04060b;
+    --welcome-page: #090c13;
+    --fa-primary-color: #a79dff;
+    --dialogue-color: #9990ff;
+    --dialogue-border-color: 1px solid rgba(145, 137, 255, 0.2);
+    --file-options-hover: #cbc2ff;
+    --modal-box-color: rgba(145, 137, 255, 0.2);
 }
 
 body {
     background:
-        radial-gradient(circle at top left, rgba(108, 82, 168, 0.14), transparent 26%),
-        radial-gradient(circle at bottom right, rgba(80, 61, 121, 0.12), transparent 24%),
-        linear-gradient(180deg, #05060a 0%, #07080d 44%, #06070b 100%);
+        radial-gradient(circle at top left, rgba(87, 88, 172, 0.16), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(88, 61, 138, 0.12), transparent 22%),
+        linear-gradient(180deg, #04050a 0%, #05070d 44%, #04060b 100%);
 }
 
 #mainProductivityArea {
     background:
-        radial-gradient(circle at 16% 10%, rgba(112, 81, 177, 0.06), transparent 16%),
-        radial-gradient(circle at 82% 86%, rgba(76, 56, 118, 0.06), transparent 15%);
+        radial-gradient(circle at 16% 10%, rgba(92, 101, 188, 0.06), transparent 16%),
+        radial-gradient(circle at 82% 86%, rgba(86, 67, 144, 0.06), transparent 15%);
 }
 
 nav {
     background:
-        linear-gradient(135deg, rgba(28, 22, 40, 0.96), rgba(16, 13, 24, 0.98));
-    border: 1px solid rgba(139, 112, 196, 0.18);
+        linear-gradient(135deg, rgba(20, 21, 34, 0.96), rgba(11, 12, 22, 0.98));
+    border: 1px solid rgba(118, 116, 201, 0.18);
     box-shadow:
         0 10px 28px rgba(0, 0, 0, 0.28),
         inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -1494,14 +1614,14 @@ nav {
 }
 
 .dropdown-trigger-btn:hover {
-    color: #f1ebff;
+    color: #eef3ff;
 }
 
 .dropdown-content,
 .subdropdown-content {
     background:
-        linear-gradient(180deg, rgba(30, 24, 42, 0.98), rgba(18, 14, 27, 0.98));
-    border: 1px solid rgba(133, 106, 188, 0.16);
+        linear-gradient(180deg, rgba(22, 23, 38, 0.98), rgba(13, 14, 24, 0.98));
+    border: 1px solid rgba(114, 112, 193, 0.16);
     box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32);
     backdrop-filter: blur(14px);
 }
@@ -1516,8 +1636,8 @@ nav {
 .statusBarWrapper,
 .sidebarscontent {
     background:
-        linear-gradient(180deg, rgba(22, 18, 32, 0.98), rgba(12, 10, 18, 0.98));
-    border: 1px solid rgba(123, 97, 176, 0.14);
+        linear-gradient(180deg, rgba(17, 18, 30, 0.98), rgba(10, 11, 20, 0.98));
+    border: 1px solid rgba(109, 108, 186, 0.14);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
@@ -1532,18 +1652,21 @@ nav {
 }
 
 .sidebaricons:hover {
-    background: linear-gradient(180deg, rgba(134, 104, 201, 0.2), rgba(82, 64, 118, 0.12));
+    background: linear-gradient(180deg, rgba(108, 110, 201, 0.18), rgba(68, 66, 126, 0.12));
     transform: translateY(-1px);
 }
 
 .sidebarIconBar {
-    background: linear-gradient(180deg, #bc92ff, #8367c9);
+    background: linear-gradient(180deg, #a89eff, #7377d8);
     border-radius: 999px;
 }
 
 .maincodearea {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     background:
-        linear-gradient(180deg, rgba(18, 15, 26, 0.98), rgba(10, 9, 16, 0.98));
+        linear-gradient(180deg, rgba(15, 15, 27, 0.98), rgba(8, 9, 17, 0.98));
     border-radius: 14px;
     box-shadow:
         0 18px 40px rgba(0, 0, 0, 0.26),
@@ -1553,33 +1676,33 @@ nav {
 
 #editor-wrapper {
     background:
-        linear-gradient(180deg, rgba(16, 14, 22, 0.96), rgba(10, 9, 15, 0.98));
+        linear-gradient(180deg, rgba(13, 14, 24, 0.96), rgba(8, 9, 16, 0.98));
 }
 
 .tabs {
     background:
-        linear-gradient(180deg, rgba(28, 22, 40, 0.96), rgba(17, 14, 25, 0.86));
-    border-bottom: 1px solid rgba(128, 102, 185, 0.14);
+        linear-gradient(180deg, rgba(22, 22, 38, 0.96), rgba(13, 14, 24, 0.86));
+    border-bottom: 1px solid rgba(112, 111, 194, 0.14);
 }
 
 .tab {
     background:
-        linear-gradient(180deg, rgba(38, 29, 56, 0.94), rgba(24, 19, 35, 0.96));
-    border: 1px solid rgba(128, 102, 184, 0.16);
+        linear-gradient(180deg, rgba(31, 31, 52, 0.94), rgba(18, 19, 34, 0.96));
+    border: 1px solid rgba(111, 111, 192, 0.16);
     border-bottom: none;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .tab:hover {
     background:
-        linear-gradient(180deg, rgba(51, 39, 73, 0.94), rgba(29, 23, 43, 0.96));
+        linear-gradient(180deg, rgba(41, 40, 67, 0.94), rgba(23, 24, 42, 0.96));
 }
 
 .tab.active {
     background:
-        linear-gradient(180deg, rgba(75, 57, 112, 0.96), rgba(39, 29, 61, 0.98));
+        linear-gradient(180deg, rgba(56, 53, 94, 0.96), rgba(29, 29, 55, 0.98));
     box-shadow:
-        0 0 0 1px rgba(152, 122, 219, 0.18),
+        0 0 0 1px rgba(138, 132, 224, 0.18),
         inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
@@ -1589,35 +1712,35 @@ nav {
 
 .welcomePage {
     background:
-        radial-gradient(circle at top left, rgba(124, 98, 188, 0.12), transparent 24%),
-        radial-gradient(circle at bottom right, rgba(96, 72, 146, 0.1), transparent 22%),
-        linear-gradient(180deg, #0d0a14 0%, #0a0910 100%);
+        radial-gradient(circle at top left, rgba(99, 99, 190, 0.12), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(92, 71, 155, 0.1), transparent 22%),
+        linear-gradient(180deg, #090c13 0%, #07090f 100%);
 }
 
 #importantLinks {
     background:
-        linear-gradient(180deg, rgba(29, 22, 43, 0.94), rgba(18, 14, 27, 0.96));
-    border: 1px solid rgba(122, 98, 174, 0.12);
+        linear-gradient(180deg, rgba(22, 23, 40, 0.94), rgba(13, 14, 24, 0.96));
+    border: 1px solid rgba(112, 111, 190, 0.12);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .link {
     background:
-        linear-gradient(135deg, rgba(60, 46, 91, 0.9), rgba(29, 23, 43, 0.98));
-    border: 1px solid rgba(134, 108, 191, 0.14);
+        linear-gradient(135deg, rgba(39, 40, 72, 0.9), rgba(19, 20, 37, 0.98));
+    border: 1px solid rgba(116, 114, 196, 0.14);
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.14);
 }
 
 .link:hover {
     background:
-        linear-gradient(135deg, rgba(75, 57, 112, 0.94), rgba(35, 28, 51, 0.98));
+        linear-gradient(135deg, rgba(50, 49, 87, 0.94), rgba(24, 24, 44, 0.98));
     transform: translateY(-1px);
 }
 
 #defaultPage {
     background:
-        radial-gradient(circle at top, rgba(103, 80, 156, 0.06), transparent 26%),
-        linear-gradient(180deg, rgba(13, 11, 20, 0.96), rgba(9, 8, 14, 0.98));
+        radial-gradient(circle at top, rgba(94, 96, 188, 0.06), transparent 26%),
+        linear-gradient(180deg, rgba(10, 12, 20, 0.96), rgba(7, 9, 14, 0.98));
 }
 
 .modal {
@@ -1627,64 +1750,64 @@ nav {
 
 .modalContainer {
     background:
-        linear-gradient(180deg, rgba(28, 22, 41, 0.98), rgba(17, 14, 25, 0.98));
-    border: 1px solid rgba(135, 108, 192, 0.2);
+        linear-gradient(180deg, rgba(20, 21, 37, 0.98), rgba(12, 13, 23, 0.98));
+    border: 1px solid rgba(117, 116, 198, 0.2);
     box-shadow: 0 26px 54px rgba(0, 0, 0, 0.3);
 }
 
 .modalControlButtons {
-    color: #e8ddff;
+    color: #e4ecff;
 }
 
 .modalControlButtons:hover {
-    background: rgba(149, 118, 214, 0.16);
+    background: rgba(126, 122, 216, 0.16);
 }
 
 .explorer-shell {
     background:
-        radial-gradient(circle at top right, rgba(108, 82, 168, 0.08), transparent 18%),
-        linear-gradient(180deg, rgba(20, 16, 30, 0.98), rgba(12, 10, 18, 0.98));
+        radial-gradient(circle at top right, rgba(96, 98, 192, 0.08), transparent 18%),
+        linear-gradient(180deg, rgba(16, 17, 30, 0.98), rgba(10, 11, 20, 0.98));
 }
 
 .explorer-header {
-    border-bottom: 1px solid rgba(128, 102, 183, 0.14);
+    border-bottom: 1px solid rgba(111, 110, 191, 0.14);
 }
 
 .explorer-toolbar-btn,
 .explorer-action-btn {
     background:
-        linear-gradient(180deg, rgba(52, 40, 76, 0.82), rgba(29, 23, 43, 0.9));
-    border: 1px solid rgba(128, 102, 184, 0.16);
+        linear-gradient(180deg, rgba(36, 36, 62, 0.82), rgba(19, 20, 37, 0.9));
+    border: 1px solid rgba(111, 110, 191, 0.16);
 }
 
 .explorer-toolbar-btn:hover,
 .explorer-action-btn:hover {
     background:
-        linear-gradient(180deg, rgba(88, 69, 129, 0.82), rgba(43, 34, 63, 0.9));
+        linear-gradient(180deg, rgba(53, 51, 89, 0.82), rgba(27, 27, 49, 0.9));
 }
 
 .explorer-open-editor:hover,
 .explorer-open-editor.active,
 .explorer-node:hover,
 .explorer-node.selected {
-    background: rgba(108, 84, 158, 0.18);
+    background: rgba(106, 102, 182, 0.18);
 }
 
 .explorer-node.active {
-    background: linear-gradient(90deg, rgba(111, 87, 162, 0.26), rgba(64, 50, 95, 0.28));
+    background: linear-gradient(90deg, rgba(78, 76, 143, 0.26), rgba(41, 40, 76, 0.28));
 }
 
 .explorer-inline-create {
     background:
-        linear-gradient(180deg, rgba(56, 44, 81, 0.52), rgba(24, 19, 35, 0.62));
-    border: 1px solid rgba(128, 102, 183, 0.14);
+        linear-gradient(180deg, rgba(38, 39, 69, 0.52), rgba(19, 20, 37, 0.62));
+    border: 1px solid rgba(111, 110, 191, 0.14);
 }
 
 .explorer-inline-input {
-    box-shadow: 0 0 0 1px rgba(149, 118, 214, 0.1);
+    box-shadow: 0 0 0 1px rgba(132, 128, 222, 0.1);
 }
 
 .statusBarWrapper {
     background:
-        linear-gradient(90deg, rgba(47, 37, 69, 0.98), rgba(23, 19, 35, 0.98));
+        linear-gradient(90deg, rgba(33, 33, 61, 0.98), rgba(16, 17, 31, 0.98));
 }
