@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 
 export default function SideBar(props) {
 
@@ -21,13 +21,6 @@ export default function SideBar(props) {
         <div className="iconWrapper">
           <div id="extensions" className="sidebaricons" onClick={props.toggleAriaExpandedextensions}>
             <i className="fa-solid fa-puzzle-piece fa-xl"></i>
-          </div>
-          <span className="sidebarIconBar"></span>
-        </div>
-
-        <div className="iconWrapper">
-          <div id="terminal" className="sidebaricons" onClick={props.toggleAriaExpandedterminal}>
-            <i className="fa-solid fa-terminal fa-xl"></i>
           </div>
           <span className="sidebarIconBar"></span>
         </div>

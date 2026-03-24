@@ -266,7 +266,7 @@ li {
     margin-top: 0;
     display: flex;
     width: auto;
-    height: 34px;
+    height: 43px;
     justify-content: center;
     align-items: center;
 }
@@ -280,6 +280,7 @@ li {
     width: 98vw;
     min-height: 34px;
     background-color: var(--main-bg-color);
+    height: 34px;
 }
 
 .statusbar-main {
@@ -359,6 +360,44 @@ button.statusbar-item:hover {
     padding: 6px;
 }
 
+.statusbar-menu-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 6px 8px 2px;
+}
+
+.statusbar-menu-action {
+    border: none;
+    background: transparent;
+    color: #bdb8ff;
+    font-size: 12px;
+    padding: 4px 6px;
+    border-radius: 6px;
+}
+
+.statusbar-menu-action:hover {
+    background: rgba(142, 137, 255, 0.14);
+}
+
+.statusbar-menu-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 6px 8px 2px;
+}
+
+.statusbar-menu-action {
+    border: none;
+    background: transparent;
+    color: #bdb8ff;
+    font-size: 12px;
+    padding: 4px 6px;
+    border-radius: 6px;
+}
+
+.statusbar-menu-action:hover {
+    background: rgba(142, 137, 255, 0.14);
+}
+
 .statusbar-menu-item {
     border: none;
     background: transparent;
@@ -372,6 +411,74 @@ button.statusbar-item:hover {
 .statusbar-menu-item:hover,
 .statusbar-menu-item.active {
     background: rgba(142, 137, 255, 0.18);
+}
+
+.statusbar-notification-button {
+    color: #c6c0ff;
+}
+
+.statusbar-notification-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+}
+
+.statusbar-notification-item.unread {
+    background: rgba(142, 137, 255, 0.12);
+    border-color: rgba(142, 137, 255, 0.18);
+}
+
+.statusbar-notification-text {
+    font-size: 13px;
+    color: #edf1ff;
+}
+
+.statusbar-notification-time {
+    font-size: 11px;
+    color: rgba(223, 229, 255, 0.58);
+}
+
+.statusbar-notification-empty {
+    padding: 12px 10px;
+    font-size: 13px;
+    color: rgba(223, 229, 255, 0.68);
+}
+
+.statusbar-notification-button {
+    color: #c6c0ff;
+}
+
+.statusbar-notification-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+}
+
+.statusbar-notification-item.unread {
+    background: rgba(142, 137, 255, 0.12);
+    border-color: rgba(142, 137, 255, 0.18);
+}
+
+.statusbar-notification-text {
+    font-size: 13px;
+    color: #edf1ff;
+}
+
+.statusbar-notification-time {
+    font-size: 11px;
+    color: rgba(223, 229, 255, 0.58);
+}
+
+.statusbar-notification-empty {
+    padding: 12px 10px;
+    font-size: 13px;
+    color: rgba(223, 229, 255, 0.68);
 }
 
 .fa-chevron-right {
@@ -1549,6 +1656,662 @@ select.settingsInput {
     display: flex;
 }
 
+.search-shell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    background:
+        radial-gradient(circle at top right, rgba(96, 98, 192, 0.08), transparent 18%),
+        linear-gradient(180deg, rgba(16, 17, 30, 0.98), rgba(10, 11, 20, 0.98));
+}
+
+.search-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 14px 10px;
+    border-bottom: 1px solid rgba(111, 110, 191, 0.14);
+}
+
+.search-mode-row,
+.search-toggle-row,
+.search-scope-row,
+.search-history-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.search-mode-row {
+    padding: 12px 14px 0;
+}
+
+.search-mode-btn,
+.search-toggle-btn,
+.search-scope-chip,
+.search-history-chip {
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background:
+        linear-gradient(180deg, rgba(36, 36, 62, 0.82), rgba(19, 20, 37, 0.9));
+    color: rgba(240, 242, 255, 0.86);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.search-mode-btn:hover,
+.search-toggle-btn:hover,
+.search-scope-chip:hover,
+.search-history-chip:hover {
+    background:
+        linear-gradient(180deg, rgba(53, 51, 89, 0.82), rgba(27, 27, 49, 0.9));
+    border-color: rgba(148, 144, 236, 0.24);
+}
+
+.search-mode-btn.active,
+.search-toggle-btn.active,
+.search-scope-chip.active {
+    background:
+        linear-gradient(180deg, rgba(82, 73, 157, 0.96), rgba(42, 37, 82, 0.98));
+    border-color: rgba(160, 154, 255, 0.28);
+    color: #ffffff;
+}
+
+.search-mode-btn {
+    padding: 7px 12px;
+    font-size: 12px;
+}
+
+.search-toggle-btn {
+    min-width: 34px;
+    height: 34px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.search-input-group,
+.search-scope-block,
+.search-history-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px 0;
+}
+
+.search-input {
+    display: block !important;
+    width: 100%;
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background:
+        linear-gradient(180deg, rgba(11, 13, 24, 0.98), rgba(8, 10, 17, 0.98));
+    color: #f3f5ff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    outline: none;
+    font-size: 13px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.search-input:focus {
+    border-color: rgba(164, 160, 255, 0.34);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.03),
+        0 0 0 3px rgba(117, 113, 208, 0.16);
+}
+
+.search-input.secondary {
+    margin: 12px 14px 0;
+}
+
+.search-input::placeholder {
+    color: rgba(221, 226, 255, 0.42);
+}
+
+.search-scope-label {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.48);
+}
+
+.search-scope-chip,
+.search-history-chip {
+    padding: 7px 10px;
+    font-size: 12px;
+}
+
+.search-history-chip {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.search-summary {
+    padding: 14px;
+    font-size: 12px;
+    color: rgba(227, 232, 255, 0.68);
+    border-bottom: 1px solid rgba(111, 110, 191, 0.12);
+}
+
+.search-results {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 16px;
+}
+
+.search-empty-state {
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(111, 110, 191, 0.14);
+    background:
+        linear-gradient(180deg, rgba(22, 23, 40, 0.94), rgba(13, 14, 24, 0.96));
+    color: rgba(232, 236, 255, 0.8);
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.search-empty-title {
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.search-error-state {
+    color: #ffc0c0;
+    border-color: rgba(255, 115, 115, 0.2);
+}
+
+.search-result-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(111, 110, 191, 0.14);
+    background:
+        linear-gradient(180deg, rgba(22, 23, 40, 0.94), rgba(13, 14, 24, 0.96));
+}
+
+.search-result-file,
+.search-result-match {
+    width: 100%;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 8px;
+}
+
+.search-result-file {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px 6px;
+}
+
+.search-result-file:hover,
+.search-result-match:hover {
+    background: rgba(106, 102, 182, 0.18);
+}
+
+.search-result-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.search-result-path {
+    font-size: 11px;
+    color: rgba(205, 212, 255, 0.56);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.search-result-matches {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.search-result-match {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 8px;
+    align-items: start;
+    padding: 7px 8px;
+}
+
+.search-result-line {
+    font-size: 11px;
+    color: #a7b0ff;
+}
+
+.search-result-preview {
+    font-size: 12px;
+    color: rgba(237, 241, 255, 0.84);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.terminal-drawer {
+    position: relative;
+    z-index: 8;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    border-top: 1px solid rgba(111, 110, 191, 0.16);
+    background:
+        linear-gradient(180deg, rgba(13, 14, 25, 0.98), rgba(8, 10, 18, 0.98));
+    box-shadow: 0 -10px 26px rgba(0, 0, 0, 0.28);
+}
+
+.terminal-resizer {
+    height: 6px;
+    cursor: ns-resize;
+    background:
+        linear-gradient(90deg, rgba(109, 106, 192, 0.1), rgba(150, 143, 255, 0.22), rgba(109, 106, 192, 0.1));
+}
+
+.terminal-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    position: relative;
+    z-index: 2;
+}
+
+.terminal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid rgba(111, 110, 191, 0.12);
+}
+
+.terminal-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.terminal-tab-label {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: #ffffff;
+}
+
+.terminal-tab-badge {
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(117, 113, 208, 0.14);
+    color: #c8c3ff;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.terminal-toolbar {
+    display: flex;
+    gap: 6px;
+}
+
+.terminal-toolbar-btn {
+    width: 28px;
+    height: 28px;
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    border-radius: 7px;
+    background:
+        linear-gradient(180deg, rgba(36, 36, 62, 0.82), rgba(19, 20, 37, 0.9));
+    color: rgba(240, 242, 255, 0.86);
+}
+
+.terminal-toolbar-btn:hover {
+    background:
+        linear-gradient(180deg, rgba(53, 51, 89, 0.82), rgba(27, 27, 49, 0.9));
+}
+
+.terminal-banner {
+    margin: 10px 12px 0;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(89, 101, 206, 0.08);
+    border: 1px solid rgba(89, 101, 206, 0.14);
+    color: rgba(224, 230, 255, 0.74);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.terminal-body {
+    flex: 1;
+    min-height: 0;
+    padding: 10px 12px 12px;
+}
+
+.terminal-xterm {
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(111, 110, 191, 0.14);
+    background: linear-gradient(180deg, rgba(8, 10, 17, 0.98), rgba(5, 7, 12, 0.98));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.terminal-xterm .xterm-viewport {
+    border-radius: 12px;
+}
+
+.account-input {
+    display: block !important;
+    width: 100%;
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background:
+        linear-gradient(180deg, rgba(11, 13, 24, 0.98), rgba(8, 10, 17, 0.98));
+    color: #f3f5ff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    outline: none;
+    font-size: 13px;
+}
+
+.terminal-input:focus,
+.account-input:focus {
+    border-color: rgba(164, 160, 255, 0.34);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.03),
+        0 0 0 3px rgba(117, 113, 208, 0.16);
+}
+
+.account-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    height: 100%;
+    padding: 14px;
+}
+
+.account-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    border-radius: 14px;
+    background:
+        linear-gradient(180deg, rgba(22, 23, 40, 0.94), rgba(13, 14, 24, 0.96));
+    border: 1px solid rgba(111, 110, 191, 0.14);
+}
+
+.account-section-title {
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.account-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    color: rgba(233, 237, 255, 0.86);
+}
+
+.account-toggle-grid,
+.account-provider-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.account-chip,
+.account-provider-btn {
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background:
+        linear-gradient(180deg, rgba(36, 36, 62, 0.82), rgba(19, 20, 37, 0.9));
+    color: rgba(240, 242, 255, 0.86);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+.account-chip.active {
+    background:
+        linear-gradient(180deg, rgba(82, 73, 157, 0.96), rgba(42, 37, 82, 0.98));
+    border-color: rgba(160, 154, 255, 0.28);
+}
+
+.account-provider-btn:hover,
+.account-chip:hover {
+    background:
+        linear-gradient(180deg, rgba(53, 51, 89, 0.82), rgba(27, 27, 49, 0.9));
+}
+
+.account-notice {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(111, 110, 191, 0.14);
+    background: rgba(89, 101, 206, 0.08);
+    color: rgba(224, 230, 255, 0.78);
+    line-height: 1.5;
+}
+
+.keyboard-shortcuts-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    height: 100%;
+    padding: 14px;
+}
+
+.keyboard-shortcuts-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.keyboard-shortcuts-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.keyboard-shortcuts-subtitle {
+    margin-top: 4px;
+    font-size: 13px;
+    color: rgba(224, 230, 255, 0.68);
+}
+
+.keyboard-shortcuts-toolbar,
+.keyboard-shortcut-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.keyboard-shortcuts-btn {
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background: linear-gradient(180deg, rgba(53, 51, 89, 0.82), rgba(27, 27, 49, 0.9));
+    color: rgba(240, 242, 255, 0.92);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.keyboard-shortcuts-btn.subtle {
+    background: linear-gradient(180deg, rgba(36, 36, 62, 0.72), rgba(19, 20, 37, 0.86));
+}
+
+.keyboard-shortcuts-search-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.keyboard-shortcuts-search {
+    display: block !important;
+    width: 100%;
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background: linear-gradient(180deg, rgba(11, 13, 24, 0.98), rgba(8, 10, 17, 0.98));
+    color: #f3f5ff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    outline: none;
+    font-size: 13px;
+}
+
+.keyboard-shortcuts-search:focus {
+    border-color: rgba(164, 160, 255, 0.34);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 0 0 3px rgba(117, 113, 208, 0.16);
+}
+
+.keyboard-shortcuts-stats {
+    font-size: 12px;
+    color: rgba(224, 230, 255, 0.6);
+    white-space: nowrap;
+}
+
+.keyboard-shortcuts-recording {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(160, 154, 255, 0.2);
+    background: rgba(117, 113, 208, 0.12);
+    color: rgba(244, 246, 255, 0.9);
+    font-size: 13px;
+}
+
+.keyboard-shortcuts-recording-preview {
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(15, 17, 28, 0.72);
+    color: #ffffff;
+    font-family: 'Ubuntu Mono', 'Consolas', monospace;
+}
+
+.keyboard-shortcuts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.keyboard-shortcut-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(220px, 0.9fr) auto;
+    gap: 14px;
+    align-items: center;
+    padding: 14px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(22, 23, 40, 0.94), rgba(13, 14, 24, 0.96));
+    border: 1px solid rgba(111, 110, 191, 0.14);
+}
+
+.keyboard-shortcut-row.conflict {
+    border-color: rgba(255, 125, 125, 0.22);
+}
+
+.keyboard-shortcut-main {
+    min-width: 0;
+}
+
+.keyboard-shortcut-category {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.46);
+}
+
+.keyboard-shortcut-label {
+    margin-top: 4px;
+    font-size: 14px;
+    color: #ffffff;
+}
+
+.keyboard-shortcut-id {
+    margin-top: 4px;
+    font-size: 12px;
+    color: rgba(224, 230, 255, 0.46);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.keyboard-shortcut-binding-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.keyboard-shortcut-binding {
+    border: 1px solid rgba(160, 154, 255, 0.18);
+    background: rgba(14, 16, 28, 0.88);
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: #ffffff;
+    font-family: 'Ubuntu Mono', 'Consolas', monospace;
+    text-align: left;
+    min-height: 42px;
+    cursor: pointer;
+}
+
+.keyboard-shortcut-binding.recording {
+    border-color: rgba(180, 140, 255, 0.34);
+    box-shadow: 0 0 0 3px rgba(117, 113, 208, 0.16);
+}
+
+.keyboard-shortcut-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.keyboard-shortcut-badge {
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(86, 93, 130, 0.22);
+    color: rgba(233, 237, 255, 0.8);
+    font-size: 11px;
+}
+
+.keyboard-shortcut-badge.custom {
+    background: rgba(117, 113, 208, 0.18);
+    color: #d4d0ff;
+}
+
+.keyboard-shortcut-badge.conflict {
+    background: rgba(255, 125, 125, 0.16);
+    color: #ffc4c4;
+}
+
+.keyboard-shortcut-default {
+    font-size: 11px;
+    color: rgba(224, 230, 255, 0.52);
+}
+
+@media (max-width: 980px) {
+    .keyboard-shortcut-row {
+        grid-template-columns: 1fr;
+    }
+}
+
 @media (max-width: 1100px) {
     .sidebarscontent {
         width: 30vw;
@@ -1665,6 +2428,7 @@ nav {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    position: relative;
     background:
         linear-gradient(180deg, rgba(15, 15, 27, 0.98), rgba(8, 9, 17, 0.98));
     border-radius: 14px;
@@ -1677,6 +2441,17 @@ nav {
 #editor-wrapper {
     background:
         linear-gradient(180deg, rgba(13, 14, 24, 0.96), rgba(8, 9, 16, 0.98));
+    flex: 0 0 auto;
+    min-height: 0;
+    z-index: 1;
+}
+
+.welcomePage,
+#defaultPage {
+    position: relative;
+    flex: 0 0 auto;
+    min-height: 0;
+    z-index: 1;
 }
 
 .tabs {
@@ -1810,4 +2585,309 @@ nav {
 .statusBarWrapper {
     background:
         linear-gradient(90deg, rgba(33, 33, 61, 0.98), rgba(16, 17, 31, 0.98));
+}
+
+.tabs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 42px;
+    padding: 4px 8px 0;
+}
+
+.tabs.empty {
+    justify-content: flex-end;
+    padding-bottom: 4px;
+}
+
+.tabs-list {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 8px;
+    padding-bottom: 2px;
+}
+
+.tabs-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 4px;
+}
+
+.tabs-action-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background:
+        linear-gradient(180deg, rgba(36, 36, 62, 0.82), rgba(19, 20, 37, 0.9));
+    color: rgba(236, 241, 255, 0.88);
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.tabs-action-btn:hover {
+    background:
+        linear-gradient(180deg, rgba(53, 51, 89, 0.82), rgba(27, 27, 49, 0.9));
+    transform: translateY(-1px);
+}
+
+.tabs-action-btn.primary {
+    border-color: rgba(161, 155, 255, 0.24);
+    background:
+        linear-gradient(180deg, rgba(91, 78, 174, 0.92), rgba(45, 39, 98, 0.96));
+    color: #ffffff;
+}
+
+.tabs-action-btn.primary:hover {
+    background:
+        linear-gradient(180deg, rgba(105, 92, 194, 0.96), rgba(53, 45, 115, 0.98));
+}
+
+.tab-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
+}
+
+.tab-dirty {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 8px;
+    color: #bfaeff;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+
+.tab-dirty.visible {
+    opacity: 1;
+}
+
+.breadcrumbs-bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 28px;
+    padding: 0 14px;
+    border-bottom: 1px solid rgba(111, 110, 191, 0.12);
+    background:
+        linear-gradient(180deg, rgba(15, 16, 27, 0.96), rgba(10, 11, 20, 0.98));
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.breadcrumb-item,
+.breadcrumb-separator {
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.breadcrumb-item {
+    color: rgba(226, 232, 255, 0.62);
+}
+
+.breadcrumb-item.active {
+    color: #ffffff;
+}
+
+.breadcrumb-separator {
+    color: rgba(187, 180, 255, 0.4);
+}
+
+.confirm-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 4, 8, 0.64);
+    backdrop-filter: blur(10px);
+}
+
+.confirm-dialog {
+    width: min(460px, calc(100vw - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(117, 116, 198, 0.24);
+    background:
+        linear-gradient(180deg, rgba(20, 21, 37, 0.98), rgba(12, 13, 23, 0.98));
+    box-shadow: 0 28px 56px rgba(0, 0, 0, 0.34);
+}
+
+.confirm-dialog-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.confirm-dialog-message {
+    font-size: 14px;
+    line-height: 1.6;
+    color: rgba(230, 235, 255, 0.78);
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.keyboard-shortcuts-btn.danger {
+    border-color: rgba(255, 125, 125, 0.24);
+    background: linear-gradient(180deg, rgba(133, 49, 67, 0.94), rgba(84, 25, 42, 0.96));
+}
+
+.keyboard-shortcuts-btn.danger:hover {
+    background: linear-gradient(180deg, rgba(148, 54, 74, 0.96), rgba(96, 31, 50, 0.98));
+}
+
+.command-palette-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 105;
+    display: flex;
+    justify-content: center;
+    padding-top: 5.5vh;
+    background: rgba(3, 5, 10, 0.28);
+}
+
+.command-palette {
+    width: min(620px, calc(100vw - 44px));
+    max-height: 68vh;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(114, 121, 171, 0.28);
+    background: #1b2230;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
+}
+
+.command-palette-input-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid rgba(82, 127, 219, 0.88);
+    border-radius: 7px;
+    background: #111722;
+    padding: 0 12px;
+    box-shadow: 0 0 0 1px rgba(35, 53, 88, 0.6);
+}
+
+.command-palette-prompt {
+    color: #ffffff;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.command-palette-input {
+    display: block !important;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: #f3f5ff;
+    border-radius: 0;
+    padding: 12px 0;
+    outline: none;
+    font-size: 14px;
+}
+
+.command-palette-input:focus {
+    box-shadow: none;
+}
+
+.command-palette-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-height: 0;
+    overflow: auto;
+    padding-top: 8px;
+}
+
+.command-palette-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    padding: 6px 10px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.command-palette-item:hover,
+.command-palette-item.active {
+    border-color: rgba(110, 122, 150, 0.4);
+    background: #4b55661f;
+}
+
+.command-palette-item-main {
+    min-width: 0;
+    flex: 1;
+}
+
+.command-palette-item-label-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.command-palette-item-label {
+    font-size: 13px;
+    color: #ffffff;
+}
+
+.command-palette-item-meta {
+    margin-top: 2px;
+    font-size: 11px;
+    color: rgba(224, 230, 255, 0.46);
+}
+
+.command-palette-item-recent,
+.command-palette-item-category {
+    font-size: 11px;
+    color: rgba(192, 204, 230, 0.7);
+}
+
+.command-palette-item-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.command-palette-item-binding {
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: rgba(76, 83, 102, 0.35);
+    border: 1px solid rgba(132, 144, 173, 0.22);
+    color: rgba(244, 246, 255, 0.88);
+    font-size: 11px;
+    font-family: 'Ubuntu Mono', 'Consolas', monospace;
+}
+
+.command-palette-empty {
+    padding: 16px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(111, 110, 191, 0.14);
+    background: rgba(255, 255, 255, 0.02);
+    color: rgba(224, 230, 255, 0.68);
+    font-size: 13px;
 }

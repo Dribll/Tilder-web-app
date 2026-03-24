@@ -98,6 +98,42 @@ const workspace = {
     return root;
   },
 
+  getStructureSnapshot() {
+    const root = this.getRootNode();
+    if (!root) {
+      return null;
+    }
+
+    const entries = [];
+
+    function visit(node) {
+      if (node.path !== 'root') {
+        entries.push({
+          path: node.path,
+          type: node.type,
+        });
+      }
+
+      node.children?.forEach(visit);
+    }
+
+    visit(root);
+
+    return {
+      rootName: this.rootName || root.name || 'workspace',
+      entries,
+    };
+  },
+
+  async verifyPermission(handle, readWrite = false) {
+    if (!handle?.queryPermission || !handle?.requestPermission) {
+      return true;
+    }
+
+    const options = readWrite ? { mode: 'readwrite' } : {};
+    return (await handle.queryPermission(options)) === 'granted';
+  },
+
   normalizeTabs() {
     const availablePaths = new Set();
 
@@ -128,6 +164,7 @@ const workspace = {
 
   async openFolderBrowser() {
     const dirHandle = await window.showDirectoryPicker();
+    await this.verifyPermission(dirHandle, true);
     this.rootHandle = dirHandle;
     this.rootName = dirHandle.name;
     this.expandedPaths = new Set(['root']);
@@ -384,12 +421,14 @@ const workspace = {
   },
 
   async readFile(node) {
+    await this.verifyPermission(node.handle, false);
     const file = await node.handle.getFile();
     return file.text();
   },
 
   async openExternalFile() {
     const [handle] = await window.showOpenFilePicker();
+    await this.verifyPermission(handle, true);
     const file = await handle.getFile();
     const content = await file.text();
     const id = `external:${handle.name}`;
@@ -575,11 +614,13 @@ const workspace = {
     const shouldPromptForLocation = options.saveAs || !tab.handle;
     if (shouldPromptForLocation) {
       const handle = await window.showSaveFilePicker({ suggestedName: tab.name });
+      await this.verifyPermission(handle, true);
       tab.handle = handle;
       tab.name = handle.name;
       tab.language = this.getLanguage(handle.name);
     }
 
+    await this.verifyPermission(tab.handle, true);
     const writable = await tab.handle.createWritable();
     await writable.write(tab.content ?? '');
     await writable.close();

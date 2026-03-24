@@ -171,6 +171,7 @@ function TreeNode({
   setPendingAction,
   submitCreate,
   cancelCreate,
+  confirmDelete,
 }) {
   const [renameValue, setRenameValue] = useState(node.name);
   const isFolder = node.type === 'folder';
@@ -194,7 +195,7 @@ function TreeNode({
   }
 
   async function handleDelete() {
-    const confirmed = window.confirm(`Delete ${node.name}?`);
+    const confirmed = await confirmDelete(node);
     if (!confirmed) {
       return;
     }
@@ -329,6 +330,7 @@ function TreeNode({
               setPendingAction={setPendingAction}
               submitCreate={submitCreate}
               cancelCreate={cancelCreate}
+              confirmDelete={confirmDelete}
             />
           ))}
         </>
@@ -367,6 +369,7 @@ export default function FilePioneer({
   triggerOpenFolder,
   createFolderRequestNonce,
   renameRequestNonce,
+  confirmDelete,
 }) {
   const [pendingAction, setPendingAction] = useState(null);
   const [draftName, setDraftName] = useState('');
@@ -634,6 +637,7 @@ export default function FilePioneer({
                   setPendingAction={setPendingAction}
                   submitCreate={submitCreate}
                   cancelCreate={cancelCreate}
+                  confirmDelete={confirmDelete}
                 />
               ))}
             </div>

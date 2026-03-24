@@ -73,12 +73,16 @@ export default function StatusBar({
   activeTab,
   rootName,
   status,
+  notifications,
   onGoToLine,
   onSetLanguage,
   onSetIndentation,
   onSetEol,
+  onMarkNotificationsRead,
+  onClearNotifications,
 }) {
   const [openMenu, setOpenMenu] = useState(null);
+  const notificationButtonRef = useRef(null);
   const lineButtonRef = useRef(null);
   const indentButtonRef = useRef(null);
   const eolButtonRef = useRef(null);
@@ -93,8 +97,31 @@ export default function StatusBar({
     ? `${status.selectionLength} selected${status.selectedLines > 1 ? `, ${status.selectedLines} lines` : ''}`
     : null;
   const rootLabel = rootName || 'No Folder';
+  const unreadCount = notifications.filter((entry) => !entry.read).length;
 
   function renderMenu() {
+    if (openMenu === 'notifications') {
+      return (
+        <Menu title="Notifications" anchorRef={notificationButtonRef} onClose={() => setOpenMenu(null)}>
+          <div className="statusbar-menu-actions">
+            <button type="button" className="statusbar-menu-action" onClick={onClearNotifications}>
+              Clear All
+            </button>
+          </div>
+          {notifications.length ? (
+            notifications.map((entry) => (
+              <div key={entry.id} className={`statusbar-notification-item ${entry.read ? '' : 'unread'}`}>
+                <div className="statusbar-notification-text">{entry.message}</div>
+                <div className="statusbar-notification-time">{entry.time}</div>
+              </div>
+            ))
+          ) : (
+            <div className="statusbar-notification-empty">No notifications</div>
+          )}
+        </Menu>
+      );
+    }
+
     if (openMenu === 'indent') {
       return (
         <Menu title="Indentation" anchorRef={indentButtonRef} onClose={() => setOpenMenu(null)}>
@@ -166,11 +193,28 @@ export default function StatusBar({
             <span className="statusbar-badge">Web</span>
             <span className="statusbar-item subtle">{rootLabel}</span>
             {activeTab ? <span className="statusbar-item subtle">{activeTab.dirty ? 'Unsaved Changes' : 'Ready'}</span> : null}
+            <button
+              type="button"
+              className="statusbar-item statusbar-notification-button"
+              ref={notificationButtonRef}
+              onClick={() =>
+                setOpenMenu((current) => {
+                  const next = current === 'notifications' ? null : 'notifications';
+                  if (next === 'notifications') {
+                    onMarkNotificationsRead();
+                  }
+                  return next;
+                })
+              }
+            >
+              Notifications {unreadCount ? `(${unreadCount})` : ''}
+            </button>
           </div>
           <div className="statusbar-right">
             {selectionLabel ? <span className="statusbar-item subtle">{selectionLabel}</span> : null}
             {activeTab ? (
               <>
+                <span className="statusbar-item">Lines: {status.lines}</span>
                 <button type="button" className="statusbar-item" ref={lineButtonRef} onClick={onGoToLine}>
                   Ln {status.line}, Col {status.column}
                 </button>

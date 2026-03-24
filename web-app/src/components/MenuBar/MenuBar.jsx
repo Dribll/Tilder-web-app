@@ -59,8 +59,11 @@ function MenuBar(props) {
                 <li>Command Palette</li>
                 <li>Open View</li>
                 <hr className="dropdowncontent-hr" />
-                <li>Explorer</li>
-                <li>Search</li>
+                <li onClick={props.openSettings}>Settings</li>
+                <li onClick={props.openKeyboardShortcuts}>Keyboard Shortcuts</li>
+                <hr className="dropdowncontent-hr" />
+                <li onClick={props.openExplorer}>Explorer</li>
+                <li onClick={props.openSearch}>Search</li>
                 <li>Source Control</li>
                 <li>Run</li>
                 <li>Extensions</li>
@@ -68,7 +71,7 @@ function MenuBar(props) {
                 <li>Problems</li>
                 <li>Output</li>
                 <li>Debug Console</li>
-                <li>Terminal</li>
+                <li onClick={props.toggleTerminal}>Terminal</li>
               </div>
             </div>
             <div className="dropdown">
@@ -105,8 +108,14 @@ function MenuBar(props) {
           <span className="dropdown-trigger-btn" onClick={props.openSettings}>
             <i className="fa-solid fa-sliders"></i>
           </span>
-          <span className="dropdown-trigger-btn" onClick={props.openExtensions}>
-            <i className="fa-solid fa-puzzle-piece"></i>
+          <span className="dropdown-trigger-btn" onClick={props.openKeyboardShortcuts}>
+            <i className="fa-regular fa-keyboard"></i>
+          </span>
+          <span className="dropdown-trigger-btn" onClick={props.toggleTerminalPanel}>
+            <i className="fa-solid fa-terminal"></i>
+          </span>
+          <span className="dropdown-trigger-btn" onClick={props.openAccount}>
+            <i className="fa-regular fa-circle-user"></i>
           </span>
         </div>
       </nav>
