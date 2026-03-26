@@ -9,11 +9,12 @@ async function parseJson(response) {
   }
 
   if (!response.ok) {
+    const normalizedMessage = typeof data.message === 'string' ? data.message.trim() : '';
     const message =
-      data.message ||
-      (response.status === 404
+      ((response.status === 404 && (!normalizedMessage || /^not found$/i.test(normalizedMessage)))
         ? 'This Tilder deployment is missing the Node API routes. Deploy it on Render as a Web Service with `npm run build` and `npm start`, not as a static site.'
         : null) ||
+      normalizedMessage ||
       (response.status >= 500 && typeof window !== 'undefined' && window.location.port === '5173'
         ? 'Tilder API server is not reachable. Run the Node backend on port 3210, or use `npm run dev` so web and API start together.'
         : `Request failed (${response.status}).`);

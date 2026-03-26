@@ -139,6 +139,9 @@ function App() {
   const syncPushTimerRef = useRef(null);
   const applyingSyncStateRef = useRef(false);
   const authSessionReadyRef = useRef(false);
+  const authPopupRef = useRef(null);
+  const authPopupPollerRef = useRef(null);
+  const authPopupHandledRef = useRef(false);
 
   useEffect(() => {
     localStorage.setItem('editorSettings', JSON.stringify(settings));
@@ -207,8 +210,26 @@ function App() {
   }, []);
 
   useEffect(() => {
+    function clearOAuthPopupMonitor() {
+      if (authPopupPollerRef.current) {
+        window.clearInterval(authPopupPollerRef.current);
+        authPopupPollerRef.current = null;
+      }
+      authPopupRef.current = null;
+    }
+
+    function getAllowedOAuthOrigins() {
+      const origins = new Set([window.location.origin]);
+
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        origins.add(`${window.location.protocol}//${window.location.hostname}:3210`);
+      }
+
+      return origins;
+    }
+
     function handleOAuthMessage(event) {
-      if (event.origin !== window.location.origin) {
+      if (!getAllowedOAuthOrigins().has(event.origin)) {
         return;
       }
 
@@ -217,17 +238,11 @@ function App() {
         return;
       }
 
+      authPopupHandledRef.current = true;
+      clearOAuthPopupMonitor();
       setAuthBusyProvider(null);
-      fetchAuthSession()
+      refreshAuthSession()
         .then((session) => {
-          setAuthSession({
-            ...DEFAULT_AUTH_SESSION,
-            ...session,
-            syncPreferences: {
-              ...DEFAULT_AUTH_SESSION.syncPreferences,
-              ...(session?.syncPreferences || {}),
-            },
-          });
           pushNotification(
             payload.success
               ? `${payload.provider === 'github' ? 'GitHub' : 'Microsoft'} connected.`
@@ -241,7 +256,10 @@ function App() {
     }
 
     window.addEventListener('message', handleOAuthMessage);
-    return () => window.removeEventListener('message', handleOAuthMessage);
+    return () => {
+      window.removeEventListener('message', handleOAuthMessage);
+      clearOAuthPopupMonitor();
+    };
   }, []);
 
   function refresh() {
@@ -378,7 +396,40 @@ function App() {
       return;
     }
 
+    authPopupHandledRef.current = false;
+    if (authPopupPollerRef.current) {
+      window.clearInterval(authPopupPollerRef.current);
+    }
+
+    authPopupRef.current = popup;
     setAuthBusyProvider(provider);
+
+    authPopupPollerRef.current = window.setInterval(async () => {
+      if (!authPopupRef.current || !authPopupRef.current.closed) {
+        return;
+      }
+
+      window.clearInterval(authPopupPollerRef.current);
+      authPopupPollerRef.current = null;
+      authPopupRef.current = null;
+
+      if (authPopupHandledRef.current) {
+        return;
+      }
+
+      authPopupHandledRef.current = true;
+
+      try {
+        const session = await refreshAuthSession();
+        if (session?.accounts?.[provider]) {
+          pushNotification(`${provider === 'github' ? 'GitHub' : 'Microsoft'} connected.`);
+        }
+      } catch {
+        pushNotification('Could not refresh account session after sign-in.', 'warning');
+      } finally {
+        setAuthBusyProvider(null);
+      }
+    }, 350);
   }
 
   async function handleDisconnectProvider(provider) {

@@ -1,0 +1,126 @@
+{
+  "users": {
+    "github:108980710": {
+      "provider": "github",
+      "profile": {
+        "id": "108980710",
+        "username": "DhrubajyotiBiswasfounderofDribll",
+        "displayName": "Dhrubajyoti Biswas",
+        "email": "dhrubajyotibiswasDribll@outlook.com",
+        "avatarUrl": "https://avatars.githubusercontent.com/u/108980710?v=4",
+        "connectedAt": "2026-03-26T05:37:08.378Z"
+      },
+      "updatedAt": "2026-03-26T05:37:45.348Z",
+      "state": {
+        "settings": {
+          "fontSize": 31,
+          "fontFamily": "Consolas, monospace",
+          "fontWeight": "normal",
+          "lineHeight": 0,
+          "letterSpacing": 0.1,
+          "fontLigatures": false,
+          "lineNumbers": "on",
+          "lineNumbersMinChars": 5,
+          "cursorStyle": "line",
+          "cursorWidth": 2,
+          "cursorBlinking": "blink",
+          "cursorSmoothCaretAnimation": true,
+          "cursorSurroundingLines": 0,
+          "cursorSurroundingLinesStyle": "default",
+          "wordWrap": "off",
+          "wordWrapColumn": 80,
+          "wordWrapOverride1": "inherit",
+          "wordWrapOverride2": "inherit",
+          "minimap": {
+            "enabled": true,
+            "side": "right",
+            "size": "proportional",
+            "showSlider": "mouseover",
+            "renderCharacters": true,
+            "maxColumn": 120
+          },
+          "scrollBeyondLastLine": true,
+          "scrollBeyondLastColumn": 5,
+          "smoothScrolling": true,
+          "mouseWheelScrollSensitivity": 1,
+          "fastScrollSensitivity": 5,
+          "selectOnLineNumbers": true,
+          "roundedSelection": true,
+          "tabSize": 4,
+          "insertSpaces": true,
+          "detectIndentation": true,
+          "trimAutoWhitespace": true,
+          "renderWhitespace": "none",
+          "renderControlCharacters": false,
+          "renderLineHighlight": "all",
+          "renderIndentGuides": true,
+          "renderFinalNewline": true,
+          "matchBrackets": "always",
+          "bracketPairColorization": {
+            "enabled": true
+          },
+          "autoClosingBrackets": "always",
+          "autoClosingQuotes": "always",
+          "autoClosingDelete": "auto",
+          "autoClosingOvertype": "auto",
+          "autoIndent": "advanced",
+          "quickSuggestions": true,
+          "quickSuggestionsDelay": 10,
+          "suggestOnTriggerCharacters": true,
+          "acceptSuggestionOnEnter": "on",
+          "suggestSelection": "recentlyUsed",
+          "hover": {
+            "enabled": true,
+            "delay": 300
+          },
+          "links": true,
+          "find": {
+            "cursorMoveOnType": true,
+            "autoFindInSelection": "never",
+            "seedSearchStringFromSelection": true
+          },
+          "folding": true,
+          "foldingStrategy": "auto",
+          "foldingHighlight": true,
+          "dragAndDrop": true,
+          "copyWithSyntaxHighlighting": true,
+          "contextmenu": true,
+          "readOnly": false,
+          "automaticLayout": true,
+          "mouseWheelZoom": true,
+          "multiCursorModifier": "alt",
+          "multiCursorMergeOverlapping": true,
+          "accessibilitySupport": "auto",
+          "codeLens": true,
+          "colorDecorators": true,
+          "lightbulb": {
+            "enabled": true
+          },
+          "parameterHints": {
+            "enabled": true
+          },
+          "formatOnType": false,
+          "formatOnPaste": false,
+          "codeActionsOnSave": {},
+          "rulers": [],
+          "guides": {
+            "indentation": true,
+            "bracketPairs": true
+          }
+        },
+        "shortcuts": {
+          "workbench.action.openKeyboardShortcuts": "ctrl+shift+k",
+          "workbench.action.files.openFolder": "ctrl+shift+o"
+        },
+        "layout": {
+          "activePanel": "filepioneer",
+          "terminalOpen": false,
+          "terminalHeight": 220,
+          "livePreviewMode": "split",
+          "livePreviewWidth": 380,
+          "welcomeTabOpen": true
+        }
+      }
+    }
+  }
+}
