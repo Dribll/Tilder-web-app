@@ -11,6 +11,9 @@ async function parseJson(response) {
   if (!response.ok) {
     const message =
       data.message ||
+      (response.status === 404
+        ? 'This Tilder deployment is missing the Node API routes. Deploy it on Render as a Web Service with `npm run build` and `npm start`, not as a static site.'
+        : null) ||
       (response.status >= 500 && typeof window !== 'undefined' && window.location.port === '5173'
         ? 'Tilder API server is not reachable. Run the Node backend on port 3210, or use `npm run dev` so web and API start together.'
         : `SCM request failed (${response.status}).`);

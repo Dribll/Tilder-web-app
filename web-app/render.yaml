@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: tildercode
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: PUBLIC_BASE_URL
+        value: https://tildercode.onrender.com
+      - key: MICROSOFT_TENANT_ID
+        value: common
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
