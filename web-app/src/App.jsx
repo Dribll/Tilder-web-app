@@ -142,6 +142,7 @@ function App() {
   const authPopupRef = useRef(null);
   const authPopupPollerRef = useRef(null);
   const authPopupHandledRef = useRef(false);
+  const hydratedSyncUserKeyRef = useRef('');
 
   useEffect(() => {
     localStorage.setItem('editorSettings', JSON.stringify(settings));
@@ -242,7 +243,10 @@ function App() {
       clearOAuthPopupMonitor();
       setAuthBusyProvider(null);
       refreshAuthSession()
-        .then((session) => {
+        .then(async (session) => {
+          if (payload.success) {
+            await hydrateSyncedState(session, { silent: true, force: true }).catch(() => null);
+          }
           pushNotification(
             payload.success
               ? `${payload.provider === 'github' ? 'GitHub' : 'Microsoft'} connected.`
@@ -373,6 +377,80 @@ function App() {
     return session;
   }
 
+  function getSyncUserKeyFromSession(session) {
+    const provider = session?.syncProvider;
+    const accountId = provider ? session?.accounts?.[provider]?.id : null;
+    return provider && accountId ? `${provider}:${accountId}` : '';
+  }
+
+  async function hydrateSyncedState(session, options = {}) {
+    const { silent = false, force = false } = options;
+    const syncUserKey = getSyncUserKeyFromSession(session);
+
+    if (!syncUserKey) {
+      hydratedSyncUserKeyRef.current = '';
+      return null;
+    }
+
+    if (!force && hydratedSyncUserKeyRef.current === syncUserKey) {
+      return null;
+    }
+
+    try {
+      setSyncBusy(true);
+      const response = await pullSyncedState();
+      if (response?.session) {
+        setAuthSession({
+          ...DEFAULT_AUTH_SESSION,
+          ...response.session,
+          syncPreferences: {
+            ...DEFAULT_AUTH_SESSION.syncPreferences,
+            ...(response.session?.syncPreferences || {}),
+          },
+        });
+      }
+
+      if (response?.state) {
+        applySyncedState(response.state);
+      }
+
+      hydratedSyncUserKeyRef.current = syncUserKey;
+
+      if (!silent) {
+        pushNotification(response?.state ? 'Settings sync pulled from cloud.' : 'No synced settings found yet.');
+      }
+
+      return response;
+    } catch (error) {
+      if (!silent) {
+        pushNotification(error instanceof Error ? error.message : 'Unable to pull synced state.', 'warning');
+      }
+      throw error;
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  const activeAccountProvider = useMemo(() => {
+    if (authSession?.syncProvider && authSession.accounts?.[authSession.syncProvider]) {
+      return authSession.syncProvider;
+    }
+
+    if (authSession?.accounts?.github) {
+      return 'github';
+    }
+
+    if (authSession?.accounts?.microsoft) {
+      return 'microsoft';
+    }
+
+    return '';
+  }, [authSession]);
+
+  const activeAccount = useMemo(() => {
+    return activeAccountProvider ? authSession?.accounts?.[activeAccountProvider] || null : null;
+  }, [activeAccountProvider, authSession]);
+
   function handleStartOAuth(provider) {
     if (authServiceStatus === 'error') {
       pushNotification(
@@ -422,6 +500,7 @@ function App() {
       try {
         const session = await refreshAuthSession();
         if (session?.accounts?.[provider]) {
+          await hydrateSyncedState(session, { silent: true, force: true }).catch(() => null);
           pushNotification(`${provider === 'github' ? 'GitHub' : 'Microsoft'} connected.`);
         }
       } catch {
@@ -436,6 +515,7 @@ function App() {
     try {
       setAuthBusyProvider(provider);
       const session = await disconnectProvider(provider);
+      hydratedSyncUserKeyRef.current = '';
       setAuthSession({
         ...DEFAULT_AUTH_SESSION,
         ...session,
@@ -463,6 +543,7 @@ function App() {
           ...(session?.syncPreferences || {}),
         },
       });
+      await hydrateSyncedState(session, { silent: true, force: true }).catch(() => null);
       pushNotification(`Settings sync will use ${provider === 'github' ? 'GitHub' : 'Microsoft'}.`);
     } catch (error) {
       pushNotification(error instanceof Error ? error.message : 'Unable to update sync provider.', 'warning');
@@ -516,26 +597,7 @@ function App() {
       return;
     }
 
-    try {
-      setSyncBusy(true);
-      const response = await pullSyncedState();
-      if (response?.session) {
-        setAuthSession({
-          ...DEFAULT_AUTH_SESSION,
-          ...response.session,
-          syncPreferences: {
-            ...DEFAULT_AUTH_SESSION.syncPreferences,
-            ...(response.session?.syncPreferences || {}),
-          },
-        });
-      }
-      applySyncedState(response?.state);
-      pushNotification(response?.state ? 'Settings sync pulled from cloud.' : 'No synced settings found yet.');
-    } catch (error) {
-      pushNotification(error instanceof Error ? error.message : 'Unable to pull synced state.', 'warning');
-    } finally {
-      setSyncBusy(false);
-    }
+    await hydrateSyncedState(authSession, { force: true });
   }
 
   function closeCurrentModal() {
@@ -690,6 +752,10 @@ function App() {
 
     setModalType('Account');
     setModalOpen(true);
+    refreshAuthSession().catch((error) => {
+      setAuthServiceStatus('error');
+      setAuthServiceMessage(error instanceof Error ? error.message : 'Could not reach the Tilder auth server.');
+    });
   }
 
   function toggleTerminalPanel(nextState) {
@@ -931,6 +997,11 @@ function App() {
       return undefined;
     }
 
+    const syncUserKey = getSyncUserKeyFromSession(authSession);
+    if (!syncUserKey || hydratedSyncUserKeyRef.current !== syncUserKey) {
+      return undefined;
+    }
+
     if (!authSession.syncPreferences?.syncSettings && !authSession.syncPreferences?.syncLayout && !authSession.syncPreferences?.syncShortcuts) {
       return undefined;
     }
@@ -955,6 +1026,19 @@ function App() {
     terminalOpen,
     welcomeTabOpen,
   ]);
+
+  useEffect(() => {
+    if (!authSessionReadyRef.current || applyingSyncStateRef.current) {
+      return;
+    }
+
+    const syncUserKey = getSyncUserKeyFromSession(authSession);
+    if (!syncUserKey || hydratedSyncUserKeyRef.current === syncUserKey) {
+      return;
+    }
+
+    hydrateSyncedState(authSession, { silent: true, force: true }).catch(() => null);
+  }, [authSession]);
 
   function syncEditorStatus(editorInstance = editorRef.current) {
     const editor = editorInstance;
@@ -1932,6 +2016,9 @@ function App() {
           stopDebugging={handleStopDebugging}
           restartDebugging={handleRestartDebugging}
           toggleTerminal={() => toggleTerminalPanel()}
+          accountAvatarUrl={activeAccount?.avatarUrl || ''}
+          accountDisplayName={activeAccount?.displayName || activeAccount?.username || activeAccount?.email || ''}
+          accountProvider={activeAccountProvider}
         />
         <div className="mainsect">
           <div className="codewrpr">

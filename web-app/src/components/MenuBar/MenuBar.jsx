@@ -6,6 +6,8 @@ function MenuBar(props) {
     window.close();
   }
 
+  const accountInitial = (props.accountDisplayName || props.accountProvider || 'A').trim().charAt(0).toUpperCase();
+
   return (
     <header>
       <nav>
@@ -118,8 +120,14 @@ function MenuBar(props) {
           <span className="dropdown-trigger-btn" onClick={props.toggleTerminalPanel}>
             <i className="fa-solid fa-terminal"></i>
           </span>
-          <span className="dropdown-trigger-btn" onClick={props.openAccount}>
-            <i className="fa-regular fa-circle-user"></i>
+          <span className="dropdown-trigger-btn account-menu-trigger" onClick={props.openAccount} title={props.accountDisplayName || 'Open Account Center'}>
+            {props.accountAvatarUrl ? (
+              <img src={props.accountAvatarUrl} alt={props.accountDisplayName || 'Connected account'} className="account-menu-avatar" />
+            ) : (
+              <span className={`account-menu-fallback ${props.accountProvider ? 'connected' : ''}`}>
+                {props.accountProvider ? accountInitial : <i className="fa-regular fa-circle-user"></i>}
+              </span>
+            )}
           </span>
         </div>
       </nav>
@@ -136,6 +144,9 @@ MenuBar.defaultProps = {
   go: 'Go',
   run_debug: 'Run & Debug',
   help: 'Help',
+  accountAvatarUrl: '',
+  accountDisplayName: '',
+  accountProvider: '',
 };
 
 MenuBar.propTypes = {
@@ -145,4 +156,7 @@ MenuBar.propTypes = {
   go: PropTypes.string.isRequired,
   run_debug: PropTypes.string.isRequired,
   help: PropTypes.string.isRequired,
+  accountAvatarUrl: PropTypes.string,
+  accountDisplayName: PropTypes.string,
+  accountProvider: PropTypes.string,
 };

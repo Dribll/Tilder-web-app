@@ -347,12 +347,29 @@ async function exchangeMicrosoftCode({ code, redirectUri }) {
     throw new Error(profile.error?.message || 'Unable to load Microsoft profile.');
   }
 
+  let avatarUrl = '';
+  try {
+    const photoResponse = await fetch('https://graph.microsoft.com/v1.0/me/photos/48x48/$value', {
+      headers: {
+        Authorization: `Bearer ${token.access_token}`,
+      },
+    });
+
+    if (photoResponse.ok) {
+      const contentType = photoResponse.headers.get('content-type') || 'image/jpeg';
+      const photoBuffer = Buffer.from(await photoResponse.arrayBuffer());
+      avatarUrl = `data:${contentType};base64,${photoBuffer.toString('base64')}`;
+    }
+  } catch {
+    avatarUrl = '';
+  }
+
   return {
     id: String(profile.id),
     username: profile.userPrincipalName || profile.mail || profile.displayName,
     displayName: profile.displayName || profile.userPrincipalName || 'Microsoft User',
     email: profile.mail || profile.userPrincipalName || '',
-    avatarUrl: '',
+    avatarUrl,
     accessToken: token.access_token,
     refreshToken: token.refresh_token || '',
     connectedAt: new Date().toISOString(),

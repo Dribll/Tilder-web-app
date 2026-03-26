@@ -3337,6 +3337,43 @@ nav {
     background: rgba(255, 255, 255, 0.04);
 }
 
+.account-menu-trigger {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
+}
+
+.account-menu-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(147, 154, 255, 0.34);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.account-menu-fallback {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: rgba(235, 239, 255, 0.9);
+    background: linear-gradient(180deg, rgba(46, 49, 83, 0.95), rgba(28, 30, 52, 0.98));
+    border: 1px solid rgba(118, 123, 203, 0.3);
+}
+
+.account-menu-fallback.connected {
+    background: linear-gradient(180deg, rgba(89, 97, 192, 0.95), rgba(55, 62, 135, 0.98));
+    border-color: rgba(153, 160, 255, 0.42);
+}
+
 .scm-panel,
 .github-panel {
     display: flex;
