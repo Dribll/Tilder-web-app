@@ -64,9 +64,9 @@ function MenuBar(props) {
                 <hr className="dropdowncontent-hr" />
                 <li onClick={props.openExplorer}>Explorer</li>
                 <li onClick={props.openSearch}>Search</li>
-                <li>Source Control</li>
-                <li>Run</li>
-                <li>Extensions</li>
+                <li onClick={props.openSourceControl}>Source Control</li>
+                <li onClick={props.openDebug}>Run</li>
+                <li onClick={props.openExtensions}>Extensions</li>
                 <hr className="dropdowncontent-hr" />
                 <li>Problems</li>
                 <li>Output</li>
@@ -80,20 +80,24 @@ function MenuBar(props) {
                 <li>Switch Editor</li>
                 <li>Switch Group</li>
                 <hr className="dropdowncontent-hr" />
-                <li>Go to File</li>
-                <li>Go to Symbol in Workspace</li>
-                <li>Go to Symbol in Editor</li>
-                <li>Go to Definition</li>
-                <li>Go to References</li>
+                <li onClick={props.goToFile}>Go to File</li>
+                <li onClick={props.goToSymbolInWorkspace}>Go to Symbol in Workspace</li>
+                <li onClick={props.goToSymbolInEditor}>Go to Symbol in Editor</li>
+                <li onClick={props.goToLine}>Go to Line</li>
+                <li onClick={props.goToDefinition}>Go to Definition</li>
+                <li onClick={props.goToReferences}>Go to References</li>
               </div>
             </div>
             <div className="dropdown">
               <span className="dropdown-trigger-btn">{props.run_debug}</span>
               <div className="dropdown-content">
-                <li>Start Debugging</li>
-                <li>Run Without Debugging</li>
-                <li>Stop Debugging</li>
-                <li>Restart Debugging</li>
+                <li onClick={props.openSplitLivePreview}>Open Live Preview Beside Editor</li>
+                <li onClick={props.openTabLivePreview}>Open Live Preview In New Tab</li>
+                <hr className="dropdowncontent-hr" />
+                <li onClick={props.startDebugging}>Start Debugging</li>
+                <li onClick={props.runWithoutDebugging}>Run Without Debugging</li>
+                <li onClick={props.stopDebugging}>Stop Debugging</li>
+                <li onClick={props.restartDebugging}>Restart Debugging</li>
               </div>
             </div>
             <div className="dropdown">

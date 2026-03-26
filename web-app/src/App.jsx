@@ -24,11 +24,29 @@ import Extensions from './components/Extensions/Extensions.jsx';
 import Account from './components/Account/Account.jsx';
 import KeyboardShortcuts from './components/KeyboardShortcuts/KeyboardShortcuts.jsx';
 import MonacoEditor from './components/Editor/MonacoEditor.jsx';
+import LivePreview from './components/LivePreview/LivePreview.jsx';
 import shortcutManager, { formatBindingLabel, normalizeBindingString } from './components/ShortcutManager.js';
 import defaultSettings from './components/Settings/defaultSettings.js';
 import workspace from './core/workspace.js';
+import { beginOAuth, disconnectProvider, fetchAuthSession, pullSyncedState, pushSyncedState, updateSyncPreferences } from './core/accountApi.js';
 import { getEffectiveBinding, KEYBINDING_COMMANDS } from './core/keybindings.js';
 import { fetchRunnerLanguages, formatLocalRunResult, formatRunResult, resolveRunnerLanguage, runCode, runCodeLocally } from './core/codeRunner.js';
+
+const LIVE_PREVIEW_CHANNEL = 'tilder-live-preview';
+const LIVE_PREVIEW_ID = 'primary';
+const DEFAULT_AUTH_SESSION = {
+  providers: {
+    github: false,
+    microsoft: false,
+  },
+  accounts: {},
+  syncProvider: null,
+  syncPreferences: {
+    syncSettings: true,
+    syncLayout: true,
+    syncShortcuts: true,
+  },
+};
 
 function App() {
   const [settings, setSettings] = useState(() => {
@@ -84,8 +102,28 @@ function App() {
   const [notifications, setNotifications] = useState([]);
   const [version, setVersion] = useState(0);
   const [searchFocusNonce, setSearchFocusNonce] = useState(0);
+  const [searchRequest, setSearchRequest] = useState(null);
   const [runnerLanguages, setRunnerLanguages] = useState([]);
   const [runnerLoading, setRunnerLoading] = useState(false);
+  const [livePreviewOpen, setLivePreviewOpen] = useState(false);
+  const [livePreviewMode, setLivePreviewMode] = useState('split');
+  const [livePreviewDocument, setLivePreviewDocument] = useState('');
+  const [livePreviewNonce, setLivePreviewNonce] = useState(0);
+  const [livePreviewWidth, setLivePreviewWidth] = useState(380);
+  const [isResizingLivePreview, setIsResizingLivePreview] = useState(false);
+  const [authSession, setAuthSession] = useState(DEFAULT_AUTH_SESSION);
+  const [authServiceStatus, setAuthServiceStatus] = useState('loading');
+  const [authServiceMessage, setAuthServiceMessage] = useState('');
+  const [authBusyProvider, setAuthBusyProvider] = useState(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [debugSession, setDebugSession] = useState({
+    status: 'idle',
+    mode: 'Ready',
+    message: 'Open a file to run or debug.',
+  });
+  const [debugBreakpoints, setDebugBreakpoints] = useState({});
+  const [watchExpressions, setWatchExpressions] = useState([]);
+  const [debugDiagnostics, setDebugDiagnostics] = useState([]);
   const saveTimersRef = useRef({});
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
@@ -95,6 +133,12 @@ function App() {
   const mainCodeAreaRef = useRef(null);
   const terminalApiRef = useRef(null);
   const confirmationResolverRef = useRef(null);
+  const breakpointDecorationsRef = useRef([]);
+  const livePreviewWindowRef = useRef(null);
+  const livePreviewChannelRef = useRef(null);
+  const syncPushTimerRef = useRef(null);
+  const applyingSyncStateRef = useRef(false);
+  const authSessionReadyRef = useRef(false);
 
   useEffect(() => {
     localStorage.setItem('editorSettings', JSON.stringify(settings));
@@ -105,6 +149,20 @@ function App() {
   }, [customKeybindings]);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.BroadcastChannel === 'undefined') {
+      return undefined;
+    }
+
+    const channel = new window.BroadcastChannel(LIVE_PREVIEW_CHANNEL);
+    livePreviewChannelRef.current = channel;
+
+    return () => {
+      channel.close();
+      livePreviewChannelRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     modalOpenRef.current = modalOpen;
     modalTypeRef.current = modalType;
     if (modalOpen) {
@@ -112,12 +170,87 @@ function App() {
     }
   }, [modalOpen, modalType]);
 
+  useEffect(() => {
+    let active = true;
+
+    fetchAuthSession()
+      .then((session) => {
+        if (!active) {
+          return;
+        }
+
+        setAuthSession({
+          ...DEFAULT_AUTH_SESSION,
+          ...session,
+          syncPreferences: {
+            ...DEFAULT_AUTH_SESSION.syncPreferences,
+            ...(session?.syncPreferences || {}),
+          },
+        });
+        setAuthServiceStatus('ready');
+        setAuthServiceMessage('');
+        authSessionReadyRef.current = true;
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+
+        setAuthServiceStatus('error');
+        setAuthServiceMessage(error instanceof Error ? error.message : 'Could not reach the Tilder auth server.');
+        authSessionReadyRef.current = true;
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleOAuthMessage(event) {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      const payload = event.data;
+      if (!payload || payload.type !== 'tilder:oauth-complete') {
+        return;
+      }
+
+      setAuthBusyProvider(null);
+      fetchAuthSession()
+        .then((session) => {
+          setAuthSession({
+            ...DEFAULT_AUTH_SESSION,
+            ...session,
+            syncPreferences: {
+              ...DEFAULT_AUTH_SESSION.syncPreferences,
+              ...(session?.syncPreferences || {}),
+            },
+          });
+          pushNotification(
+            payload.success
+              ? `${payload.provider === 'github' ? 'GitHub' : 'Microsoft'} connected.`
+              : payload.message || 'Authentication failed.',
+            payload.success ? 'info' : 'warning'
+          );
+        })
+        .catch(() => {
+          pushNotification('Could not refresh account session.', 'warning');
+        });
+    }
+
+    window.addEventListener('message', handleOAuthMessage);
+    return () => window.removeEventListener('message', handleOAuthMessage);
+  }, []);
+
   function refresh() {
     setVersion((current) => current + 1);
   }
 
-  function openSearchPanel() {
+  function openSearchPanel(request = null) {
     setActivePanel('search');
+    setSearchRequest(request ? { ...request, nonce: Date.now() } : null);
     setSearchFocusNonce((current) => current + 1);
   }
 
@@ -150,9 +283,299 @@ function App() {
     setNotifications([]);
   }
 
+  function buildSyncState() {
+    const nextState = {};
+
+    if (authSession.syncPreferences?.syncSettings) {
+      nextState.settings = settings;
+    }
+
+    if (authSession.syncPreferences?.syncShortcuts) {
+      nextState.shortcuts = customKeybindings;
+    }
+
+    if (authSession.syncPreferences?.syncLayout) {
+      nextState.layout = {
+        activePanel,
+        terminalOpen,
+        terminalHeight,
+        livePreviewMode,
+        livePreviewWidth,
+        welcomeTabOpen,
+      };
+    }
+
+    return nextState;
+  }
+
+  function applySyncedState(nextState) {
+    if (!nextState || typeof nextState !== 'object') {
+      return;
+    }
+
+    applyingSyncStateRef.current = true;
+
+    if (nextState.settings && typeof nextState.settings === 'object') {
+      setSettings((current) => ({
+        ...current,
+        ...nextState.settings,
+      }));
+    }
+
+    if (nextState.shortcuts && typeof nextState.shortcuts === 'object') {
+      setCustomKeybindings(nextState.shortcuts);
+    }
+
+    if (nextState.layout && typeof nextState.layout === 'object') {
+      setActivePanel(nextState.layout.activePanel ?? 'filepioneer');
+      setTerminalOpen(Boolean(nextState.layout.terminalOpen));
+      setTerminalHeight(Number(nextState.layout.terminalHeight) || 220);
+      setLivePreviewMode(nextState.layout.livePreviewMode === 'tab' ? 'tab' : 'split');
+      setLivePreviewWidth(Math.min(780, Math.max(280, Number(nextState.layout.livePreviewWidth) || 380)));
+      setWelcomeTabOpen(nextState.layout.welcomeTabOpen !== false);
+    }
+
+    setTimeout(() => {
+      applyingSyncStateRef.current = false;
+    }, 0);
+  }
+
+  async function refreshAuthSession() {
+    const session = await fetchAuthSession();
+    setAuthSession({
+      ...DEFAULT_AUTH_SESSION,
+      ...session,
+      syncPreferences: {
+        ...DEFAULT_AUTH_SESSION.syncPreferences,
+        ...(session?.syncPreferences || {}),
+      },
+    });
+    setAuthServiceStatus('ready');
+    setAuthServiceMessage('');
+    return session;
+  }
+
+  function handleStartOAuth(provider) {
+    if (authServiceStatus === 'error') {
+      pushNotification(
+        authServiceMessage || 'The Tilder auth server is not reachable. Start the backend server on port 3210.',
+        'warning'
+      );
+      return;
+    }
+
+    if (!authSession?.providers?.[provider]) {
+      pushNotification(
+        `${provider === 'github' ? 'GitHub' : 'Microsoft'} sign-in is not enabled on this Tilder server yet. Once the server owner configures the provider, this button will open the real OAuth prompt.`,
+        'warning'
+      );
+      return;
+    }
+
+    const popup = beginOAuth(provider);
+    if (!popup) {
+      pushNotification(`Allow popups to connect ${provider === 'github' ? 'GitHub' : 'Microsoft'}.`, 'warning');
+      return;
+    }
+
+    setAuthBusyProvider(provider);
+  }
+
+  async function handleDisconnectProvider(provider) {
+    try {
+      setAuthBusyProvider(provider);
+      const session = await disconnectProvider(provider);
+      setAuthSession({
+        ...DEFAULT_AUTH_SESSION,
+        ...session,
+        syncPreferences: {
+          ...DEFAULT_AUTH_SESSION.syncPreferences,
+          ...(session?.syncPreferences || {}),
+        },
+      });
+      pushNotification(`${provider === 'github' ? 'GitHub' : 'Microsoft'} disconnected.`);
+    } catch (error) {
+      pushNotification(error instanceof Error ? error.message : 'Unable to disconnect account.', 'warning');
+    } finally {
+      setAuthBusyProvider(null);
+    }
+  }
+
+  async function handleSetSyncProvider(provider) {
+    try {
+      const session = await updateSyncPreferences({ syncProvider: provider });
+      setAuthSession({
+        ...DEFAULT_AUTH_SESSION,
+        ...session,
+        syncPreferences: {
+          ...DEFAULT_AUTH_SESSION.syncPreferences,
+          ...(session?.syncPreferences || {}),
+        },
+      });
+      pushNotification(`Settings sync will use ${provider === 'github' ? 'GitHub' : 'Microsoft'}.`);
+    } catch (error) {
+      pushNotification(error instanceof Error ? error.message : 'Unable to update sync provider.', 'warning');
+    }
+  }
+
+  async function handleToggleSyncPreference(key) {
+    try {
+      const nextPreferences = {
+        ...authSession.syncPreferences,
+        [key]: !authSession.syncPreferences?.[key],
+      };
+      const session = await updateSyncPreferences({ syncPreferences: nextPreferences });
+      setAuthSession({
+        ...DEFAULT_AUTH_SESSION,
+        ...session,
+        syncPreferences: {
+          ...DEFAULT_AUTH_SESSION.syncPreferences,
+          ...(session?.syncPreferences || {}),
+        },
+      });
+    } catch (error) {
+      pushNotification(error instanceof Error ? error.message : 'Unable to update sync preferences.', 'warning');
+    }
+  }
+
+  async function handlePushSync(options = {}) {
+    if (!authSession.syncProvider) {
+      return;
+    }
+
+    try {
+      setSyncBusy(true);
+      const payload = buildSyncState();
+      await pushSyncedState({ state: payload });
+      await refreshAuthSession();
+      if (!options.silent) {
+        pushNotification('Settings sync pushed to cloud.');
+      }
+    } catch (error) {
+      if (!options.silent) {
+        pushNotification(error instanceof Error ? error.message : 'Unable to push synced state.', 'warning');
+      }
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function handlePullSync() {
+    if (!authSession.syncProvider) {
+      return;
+    }
+
+    try {
+      setSyncBusy(true);
+      const response = await pullSyncedState();
+      if (response?.session) {
+        setAuthSession({
+          ...DEFAULT_AUTH_SESSION,
+          ...response.session,
+          syncPreferences: {
+            ...DEFAULT_AUTH_SESSION.syncPreferences,
+            ...(response.session?.syncPreferences || {}),
+          },
+        });
+      }
+      applySyncedState(response?.state);
+      pushNotification(response?.state ? 'Settings sync pulled from cloud.' : 'No synced settings found yet.');
+    } catch (error) {
+      pushNotification(error instanceof Error ? error.message : 'Unable to pull synced state.', 'warning');
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
   function closeCurrentModal() {
     setModalOpen(false);
     setModalType('');
+  }
+
+  function getActiveBreakpoints() {
+    return Object.entries(debugBreakpoints).flatMap(([path, lines]) => {
+      const node = workspace.findNode(path);
+      const tab = workspace.tabs.find((entry) => entry.path === path);
+      return [...lines]
+        .sort((left, right) => left - right)
+        .map((line) => ({
+          path,
+          line,
+          name: node?.name || tab?.name || path.split('/').pop() || path,
+        }));
+    });
+  }
+
+  function updateDebugDiagnostics(editorInstance = editorRef.current, monacoInstance = monacoRef.current) {
+    const model = editorInstance?.getModel?.();
+    if (!model || !monacoInstance) {
+      setDebugDiagnostics([]);
+      return;
+    }
+
+    const markers = monacoInstance.editor.getModelMarkers({ resource: model.uri }).map((marker) => ({
+      ...marker,
+      severity:
+        marker.severity === monacoInstance.MarkerSeverity.Error
+          ? 'error'
+          : marker.severity === monacoInstance.MarkerSeverity.Warning
+            ? 'warning'
+            : 'info',
+    }));
+
+    setDebugDiagnostics(markers);
+  }
+
+  function refreshBreakpointDecorations(editorInstance = editorRef.current, monacoInstance = monacoRef.current, tabId = workspace.activeTabId) {
+    const editor = editorInstance;
+    const monaco = monacoInstance;
+    const activeId = tabId;
+
+    if (!editor || !monaco || !activeId) {
+      return;
+    }
+
+    const tab = workspace.tabs.find((entry) => entry.id === activeId);
+    if (!tab) {
+      return;
+    }
+
+    const lines = [...(debugBreakpoints[tab.path] || [])].sort((left, right) => left - right);
+    breakpointDecorationsRef.current = editor.deltaDecorations(
+      breakpointDecorationsRef.current,
+      lines.map((line) => ({
+        range: new monaco.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: true,
+          glyphMarginClassName: 'tilder-breakpoint-glyph',
+          linesDecorationsClassName: 'tilder-breakpoint-line',
+        },
+      }))
+    );
+  }
+
+  function toggleBreakpoint(path, line) {
+    if (!path || !line) {
+      return;
+    }
+
+    setDebugBreakpoints((current) => {
+      const existing = new Set(current[path] || []);
+      if (existing.has(line)) {
+        existing.delete(line);
+      } else {
+        existing.add(line);
+      }
+
+      const next = { ...current };
+      if (existing.size) {
+        next[path] = [...existing].sort((left, right) => left - right);
+      } else {
+        delete next[path];
+      }
+
+      return next;
+    });
   }
 
   function requestConfirmation(options) {
@@ -243,6 +666,18 @@ function App() {
       return;
     }
 
+    if (tab.language === 'html') {
+      if (livePreviewMode === 'tab') {
+        if (openTabLivePreview()) {
+          pushNotification(`Live preview opened in a new tab for ${tab.name}.`);
+        }
+      } else {
+        openSplitLivePreview();
+        pushNotification(`Live preview opened beside the editor for ${tab.name}.`);
+      }
+      return;
+    }
+
     try {
       setTerminalOpen(true);
       setTimeout(() => {
@@ -318,11 +753,24 @@ function App() {
     setIsResizingTerminal(true);
   }
 
+  function startLivePreviewResize() {
+    if (!previewColumnOpen) {
+      return;
+    }
+
+    setIsResizingLivePreview(true);
+  }
+
   useEffect(() => {
     return () => {
       Object.values(saveTimersRef.current).forEach((timerId) => clearTimeout(timerId));
+      clearTimeout(syncPushTimerRef.current);
       editorListenersCleanupRef.current();
       confirmationResolverRef.current?.(false);
+      clearLivePreview();
+      setLivePreviewDocument('');
+      livePreviewWindowRef.current?.close?.();
+      livePreviewChannelRef.current?.close?.();
     };
   }, []);
 
@@ -332,21 +780,27 @@ function App() {
   const visibleTabs = [...welcomeTab, ...tabs];
   const tabActiveId = activeTab ? workspace.activeTabId : (welcomeTabOpen ? '__welcome__' : null);
   const hasSidebar = activePanel !== null;
+  const showLivePreviewAction = activeTab?.language === 'html';
+  const previewColumnOpen = livePreviewOpen && livePreviewMode === 'split' && showLivePreviewAction;
   const editorSurfaceHeight = useMemo(() => {
     const terminalOffset = terminalOpen ? terminalHeight : 0;
     return `calc(88.5vh - 46px - ${terminalOffset}px)`;
   }, [terminalHeight, terminalOpen]);
+  const editorContentWidth = useMemo(() => {
+    const baseWidth = hasSidebar ? '72vw' : '92vw';
+    return previewColumnOpen ? `calc(${baseWidth} - ${livePreviewWidth + 10}px)` : baseWidth;
+  }, [hasSidebar, livePreviewWidth, previewColumnOpen]);
   const maincodeareaStyle = useMemo(
     () => ({ width: hasSidebar ? '72vw' : '92vw', height: '88.5vh' }),
     [hasSidebar]
   );
   const monacoEditorStyle = useMemo(
-    () => ({ width: hasSidebar ? '72vw' : '92vw', height: editorSurfaceHeight, opacity: '1' }),
-    [editorSurfaceHeight, hasSidebar]
+    () => ({ width: editorContentWidth, height: editorSurfaceHeight, opacity: '1' }),
+    [editorContentWidth, editorSurfaceHeight]
   );
   const contentSurfaceStyle = useMemo(
-    () => ({ width: hasSidebar ? '72vw' : '92vw', height: editorSurfaceHeight }),
-    [editorSurfaceHeight, hasSidebar]
+    () => ({ width: editorContentWidth, height: editorSurfaceHeight }),
+    [editorContentWidth, editorSurfaceHeight]
   );
   const effectiveBindings = useMemo(
     () =>
@@ -393,6 +847,64 @@ function App() {
     };
   }, [isResizingTerminal]);
 
+  useEffect(() => {
+    if (!isResizingLivePreview) {
+      return undefined;
+    }
+
+    function handlePointerMove(event) {
+      const bounds = mainCodeAreaRef.current?.getBoundingClientRect();
+      if (!bounds) {
+        return;
+      }
+
+      const nextWidth = Math.min(780, Math.max(280, bounds.right - event.clientX));
+      setLivePreviewWidth(nextWidth);
+    }
+
+    function stopResizing() {
+      setIsResizingLivePreview(false);
+    }
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', stopResizing);
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [isResizingLivePreview]);
+
+  useEffect(() => {
+    if (!authSessionReadyRef.current || !authSession.syncProvider || applyingSyncStateRef.current) {
+      return undefined;
+    }
+
+    if (!authSession.syncPreferences?.syncSettings && !authSession.syncPreferences?.syncLayout && !authSession.syncPreferences?.syncShortcuts) {
+      return undefined;
+    }
+
+    clearTimeout(syncPushTimerRef.current);
+    syncPushTimerRef.current = setTimeout(() => {
+      handlePushSync({ silent: true });
+    }, 1400);
+
+    return () => clearTimeout(syncPushTimerRef.current);
+  }, [
+    activePanel,
+    authSession.syncPreferences?.syncLayout,
+    authSession.syncPreferences?.syncSettings,
+    authSession.syncPreferences?.syncShortcuts,
+    authSession.syncProvider,
+    customKeybindings,
+    livePreviewMode,
+    livePreviewWidth,
+    settings,
+    terminalHeight,
+    terminalOpen,
+    welcomeTabOpen,
+  ]);
+
   function syncEditorStatus(editorInstance = editorRef.current) {
     const editor = editorInstance;
     const model = editor?.getModel?.();
@@ -433,13 +945,28 @@ function App() {
     editorRef.current = editor;
     monacoRef.current = monaco;
 
-    const update = () => syncEditorStatus(editor);
+    const update = () => {
+      syncEditorStatus(editor);
+      updateDebugDiagnostics(editor, monaco);
+    };
     const model = editor.getModel?.();
     const listeners = [
       editor.onDidChangeCursorPosition(update),
       editor.onDidChangeCursorSelection(update),
       model?.onDidChangeContent(update),
       model?.onDidChangeOptions(update),
+      editor.onMouseDown((event) => {
+        if (event.target.type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+          return;
+        }
+
+        const tab = workspace.getActiveTab();
+        if (!tab) {
+          return;
+        }
+
+        toggleBreakpoint(tab.path, event.target.position?.lineNumber);
+      }),
     ].filter(Boolean);
 
     editorListenersCleanupRef.current = () => {
@@ -447,6 +974,7 @@ function App() {
     };
 
     update();
+    refreshBreakpointDecorations(editor, monaco, workspace.activeTabId);
   }
 
   function runEditorAction(actionId, fallback) {
@@ -511,6 +1039,101 @@ function App() {
     runEditorAction('editor.action.gotoLine');
   }
 
+  function handleGoToFile() {
+    openSearchPanel({ mode: 'files', query: '', scope: 'workspace' });
+  }
+
+  function handleGoToSymbolInWorkspace() {
+    openSearchPanel({ mode: 'symbols', query: '', scope: 'workspace' });
+  }
+
+  function handleGoToSymbolInEditor() {
+    runEditorAction('editor.action.quickOutline');
+  }
+
+  function handleGoToDefinition() {
+    runEditorAction('editor.action.revealDefinition');
+  }
+
+  function handleGoToReferences() {
+    runEditorAction('editor.action.goToReferences');
+  }
+
+  function getLivePreviewStorageKey() {
+    return `${LIVE_PREVIEW_CHANNEL}:${LIVE_PREVIEW_ID}`;
+  }
+
+  function openLivePreviewWindow() {
+    const previewUrl = `${window.location.origin}/live-preview.html?previewId=${encodeURIComponent(LIVE_PREVIEW_ID)}`;
+    let previewWindow = livePreviewWindowRef.current;
+
+    if (!previewWindow || previewWindow.closed) {
+      previewWindow = window.open(previewUrl, 'tilder-live-preview');
+      livePreviewWindowRef.current = previewWindow || null;
+    } else {
+      previewWindow.focus();
+    }
+
+    return previewWindow;
+  }
+
+  function publishLivePreview(payload) {
+    try {
+      localStorage.setItem(getLivePreviewStorageKey(), JSON.stringify(payload));
+    } catch {
+      // Ignore storage errors.
+    }
+
+    livePreviewChannelRef.current?.postMessage({
+      type: 'render',
+      previewId: LIVE_PREVIEW_ID,
+      payload,
+    });
+  }
+
+  function clearLivePreview() {
+    try {
+      localStorage.removeItem(getLivePreviewStorageKey());
+    } catch {
+      // Ignore storage errors.
+    }
+
+    livePreviewChannelRef.current?.postMessage({
+      type: 'clear',
+      previewId: LIVE_PREVIEW_ID,
+    });
+  }
+
+  function openSplitLivePreview() {
+    if (activeTab?.language !== 'html') {
+      return;
+    }
+
+    clearLivePreview();
+    livePreviewWindowRef.current?.close?.();
+    livePreviewWindowRef.current = null;
+    setLivePreviewMode('split');
+    setLivePreviewOpen(true);
+    setLivePreviewNonce((current) => current + 1);
+  }
+
+  function openTabLivePreview() {
+    if (activeTab?.language !== 'html') {
+      return false;
+    }
+
+    const previewWindow = openLivePreviewWindow();
+    if (!previewWindow) {
+      pushNotification('Allow popups to open the live preview tab.', 'warning');
+      return false;
+    }
+
+    setLivePreviewMode('tab');
+    setLivePreviewOpen(true);
+    setLivePreviewNonce((current) => current + 1);
+    return true;
+  }
+
   function handleSetLanguage(language) {
     const tab = workspace.getActiveTab();
     const editor = editorRef.current;
@@ -525,7 +1148,121 @@ function App() {
       monaco.editor.setModelLanguage(model, language);
     }
     pushNotification(`Language mode set to ${language}.`);
+    if (language !== 'html') {
+      setLivePreviewOpen(false);
+      setLivePreviewDocument('');
+      clearLivePreview();
+    }
     refresh();
+  }
+
+  function resolveRelativeWorkspacePath(fromPath, targetPath) {
+    const trimmed = targetPath.trim();
+    if (
+      !trimmed ||
+      trimmed.startsWith('http://') ||
+      trimmed.startsWith('https://') ||
+      trimmed.startsWith('//') ||
+      trimmed.startsWith('data:') ||
+      trimmed.startsWith('#')
+    ) {
+      return null;
+    }
+
+    const sanitized = trimmed.split('?')[0].split('#')[0];
+    const baseParts = fromPath.split('/').slice(0, -1);
+
+    sanitized.split('/').forEach((segment) => {
+      if (!segment || segment === '.') {
+        return;
+      }
+
+      if (segment === '..') {
+        baseParts.pop();
+        return;
+      }
+
+      baseParts.push(segment);
+    });
+
+    return baseParts.join('/');
+  }
+
+  async function buildLivePreviewDocument(tab) {
+    if (!tab || tab.language !== 'html') {
+      return { document: '', url: '' };
+    }
+
+    const parser = new DOMParser();
+    const parsedDocument = parser.parseFromString(tab.content ?? '', 'text/html');
+    const attributeElements = parsedDocument.querySelectorAll('[src], link[href]');
+    const tempUrls = [];
+
+    for (const element of attributeElements) {
+      const attribute = element.hasAttribute('src') ? 'src' : 'href';
+      const originalValue = element.getAttribute(attribute) || '';
+      const workspacePath = resolveRelativeWorkspacePath(tab.path || tab.name, originalValue);
+      if (!workspacePath) {
+        continue;
+      }
+
+      const node = workspace.findNode(workspacePath);
+      if (!node || node.type !== 'file') {
+        continue;
+      }
+
+      const openedTab = workspace.tabs.find((entry) => entry.path === workspacePath);
+      const content = openedTab?.content ?? (node.isDraft ? node.content || '' : await workspace.readFile(node));
+      const extension = node.name.includes('.') ? node.name.split('.').pop().toLowerCase() : '';
+      const mimeTypes = {
+        css: 'text/css',
+        gif: 'image/gif',
+        html: 'text/html',
+        ico: 'image/x-icon',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        js: 'text/javascript',
+        json: 'application/json',
+        png: 'image/png',
+        svg: 'image/svg+xml',
+        webp: 'image/webp',
+      };
+
+      const objectUrl = URL.createObjectURL(new Blob([content], { type: mimeTypes[extension] || 'text/plain' }));
+      tempUrls.push(objectUrl);
+      element.setAttribute(attribute, objectUrl);
+    }
+
+    const finalDocument = `<!DOCTYPE html>\n${parsedDocument.documentElement.outerHTML}`;
+    const finalUrl = URL.createObjectURL(new Blob([finalDocument], { type: 'text/html' }));
+    tempUrls.forEach((url) => {
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    });
+
+    return {
+      document: finalDocument,
+      url: finalUrl,
+    };
+  }
+
+  function handleToggleLivePreview() {
+    if (activeTab?.language !== 'html') {
+      return;
+    }
+
+    setLivePreviewOpen((current) => {
+      const next = !current;
+      if (next) {
+        setLivePreviewMode('split');
+        setLivePreviewNonce((value) => value + 1);
+      } else {
+        clearLivePreview();
+        setLivePreviewDocument('');
+        livePreviewWindowRef.current?.close?.();
+        livePreviewWindowRef.current = null;
+      }
+      return next;
+    });
   }
 
   function handleSetIndentation({ insertSpaces, tabSize }) {
@@ -756,6 +1493,121 @@ function App() {
     setRenameRequestNonce((current) => current + 1);
   }
 
+  function handleStartDebugging() {
+    setActivePanel('debug');
+    setDebugSession({
+      status: 'running',
+      mode: 'Debug',
+      message: activeTab ? `Debugging ${activeTab.name}` : 'Open a file to debug.',
+    });
+    if (activeTab) {
+      handleRunCurrentFile();
+    }
+  }
+
+  function handleRunWithoutDebugging() {
+    setActivePanel('debug');
+    setDebugSession({
+      status: 'running',
+      mode: 'Run',
+      message: activeTab ? `Running ${activeTab.name} without debugger` : 'Open a file to run.',
+    });
+    if (activeTab) {
+      handleRunCurrentFile();
+    }
+  }
+
+  function handlePauseDebugging() {
+    setDebugSession((current) => ({
+      ...current,
+      status: 'paused',
+      message: activeTab ? `Paused at line ${editorStatus.line} in ${activeTab.name}` : 'Paused.',
+    }));
+  }
+
+  function handleContinueDebugging() {
+    setDebugSession((current) => ({
+      ...current,
+      status: 'running',
+      message: activeTab ? `Continuing ${activeTab.name}` : 'Continuing.',
+    }));
+  }
+
+  function handleStopDebugging() {
+    setDebugSession({
+      status: 'idle',
+      mode: 'Ready',
+      message: 'Debug session stopped.',
+    });
+  }
+
+  function handleRestartDebugging() {
+    setDebugSession({
+      status: 'running',
+      mode: debugSession.mode === 'Ready' ? 'Debug' : debugSession.mode,
+      message: activeTab ? `Restarted ${activeTab.name}` : 'Restarted.',
+    });
+    if (activeTab) {
+      handleRunCurrentFile();
+    }
+  }
+
+  function handleAddBreakpointAtCursor() {
+    const tab = workspace.getActiveTab();
+    if (!tab) {
+      return;
+    }
+    toggleBreakpoint(tab.path, editorStatus.line || 1);
+  }
+
+  function handleClearBreakpoints() {
+    setDebugBreakpoints({});
+  }
+
+  function handleRemoveBreakpoint(breakpoint) {
+    toggleBreakpoint(breakpoint.path, breakpoint.line);
+  }
+
+  function handleAddWatch(expression) {
+    setWatchExpressions((current) => (current.includes(expression) ? current : [...current, expression]));
+  }
+
+  function handleRemoveWatch(expression) {
+    setWatchExpressions((current) => current.filter((entry) => entry !== expression));
+  }
+
+  const watchValues = useMemo(() => {
+    const selection = editorRef.current?.getModel?.() && editorRef.current?.getSelection?.()
+      ? editorRef.current.getModel().getValueInRange(editorRef.current.getSelection())
+      : '';
+    const context = {
+      line: editorStatus.line,
+      column: editorStatus.column,
+      lines: editorStatus.lines,
+      fileName: activeTab?.name || '',
+      filePath: activeTab?.path || '',
+      language: activeTab?.language || 'plaintext',
+      selection,
+      breakpoints: getActiveBreakpoints().length,
+    };
+
+    return watchExpressions.map((expression) => {
+      try {
+        const evaluator = new Function('context', `with (context) { return (${expression}); }`);
+        const value = evaluator(context);
+        return {
+          expression,
+          value: String(value),
+        };
+      } catch {
+        return {
+          expression,
+          value: 'Unavailable',
+        };
+      }
+    });
+  }, [activeTab?.language, activeTab?.name, activeTab?.path, debugBreakpoints, editorStatus.column, editorStatus.line, editorStatus.lines, watchExpressions]);
+
   useEffect(() => {
     if (!activeTab) {
       editorListenersCleanupRef.current();
@@ -769,8 +1621,52 @@ function App() {
         tabSize: defaultSettings.tabSize,
         insertSpaces: defaultSettings.insertSpaces,
       });
+      setDebugDiagnostics([]);
     }
   }, [activeTab?.id]);
+
+  useEffect(() => {
+    if (!livePreviewOpen || activeTab?.language !== 'html') {
+      if (activeTab?.language !== 'html') {
+        setLivePreviewDocument('');
+        clearLivePreview();
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    buildLivePreviewDocument(activeTab)
+      .then(({ document, url }) => {
+        if (!cancelled) {
+          setLivePreviewDocument(document);
+          if (livePreviewMode === 'tab') {
+            publishLivePreview({
+              previewId: LIVE_PREVIEW_ID,
+              document,
+              url,
+              title: activeTab.name,
+              path: activeTab.path,
+              updatedAt: Date.now(),
+            });
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLivePreviewDocument('');
+          clearLivePreview();
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab?.content, activeTab?.id, livePreviewMode, livePreviewNonce, livePreviewOpen, version]);
+
+  useEffect(() => {
+    refreshBreakpointDecorations();
+  }, [debugBreakpoints, workspace.activeTabId]);
 
   const commandActions = {
     'workbench.action.showCommands': () => openCommandPalette(),
@@ -791,8 +1687,17 @@ function App() {
     'workbench.action.files.newFolder': () => handleCreateFolder(),
     'workbench.action.files.openFile': () => handleOpenFileDialog(),
     'workbench.action.files.openFolder': () => handleOpenFolder(),
-    'workbench.action.quickOpen': () => handleOpenFileDialog(),
+    'workbench.action.quickOpen': () => handleGoToFile(),
     'workbench.action.gotoLine': () => handleGoToLine(),
+    'workbench.action.gotoFile': () => handleGoToFile(),
+    'workbench.action.gotoSymbolWorkspace': () => handleGoToSymbolInWorkspace(),
+    'workbench.action.gotoSymbolEditor': () => handleGoToSymbolInEditor(),
+    'editor.action.revealDefinition': () => handleGoToDefinition(),
+    'editor.action.goToReferences': () => handleGoToReferences(),
+    'workbench.action.debug.start': () => handleStartDebugging(),
+    'workbench.action.debug.runWithoutDebugging': () => handleRunWithoutDebugging(),
+    'workbench.action.debug.stop': () => handleStopDebugging(),
+    'workbench.action.debug.restart': () => handleRestartDebugging(),
     'workbench.action.files.save': () => handleSaveActiveFile(),
     'workbench.action.files.saveAs': () => handleSaveAsActiveFile(),
     'workbench.action.files.saveWorkspaceAs': () => handleSaveWorkspaceAs(),
@@ -905,7 +1810,20 @@ function App() {
       <Modal isOpen={modalOpen} closeModal={closeCurrentModal} title={modalType}>
         <Settings modalType={modalType} settings={settings} setSettings={setSettings} />
         <Extensions modalType={modalType} />
-        <Account modalType={modalType} />
+        <Account
+          modalType={modalType}
+          authSession={authSession}
+          authServiceStatus={authServiceStatus}
+          authServiceMessage={authServiceMessage}
+          authBusyProvider={authBusyProvider}
+          syncBusy={syncBusy}
+          onStartOAuth={handleStartOAuth}
+          onDisconnectProvider={handleDisconnectProvider}
+          onSetSyncProvider={handleSetSyncProvider}
+          onToggleSyncPreference={handleToggleSyncPreference}
+          onPushSync={() => handlePushSync()}
+          onPullSync={handlePullSync}
+        />
         <KeyboardShortcuts
           modalType={modalType}
           commands={KEYBINDING_COMMANDS}
@@ -941,6 +1859,27 @@ function App() {
           replace={() => runEditorAction('editor.action.startFindReplaceAction')}
           openExplorer={() => setActivePanel('filepioneer')}
           openSearch={openSearchPanel}
+          openSourceControl={() => setActivePanel('git')}
+          openDebug={() => setActivePanel('debug')}
+          goToFile={handleGoToFile}
+          goToLine={handleGoToLine}
+          goToSymbolInWorkspace={handleGoToSymbolInWorkspace}
+          goToSymbolInEditor={handleGoToSymbolInEditor}
+          goToDefinition={handleGoToDefinition}
+          goToReferences={handleGoToReferences}
+          openSplitLivePreview={() => {
+            openSplitLivePreview();
+            pushNotification(`Live preview opened beside the editor for ${activeTab?.name || 'HTML file'}.`);
+          }}
+          openTabLivePreview={() => {
+            if (openTabLivePreview()) {
+              pushNotification(`Live preview opened in a new tab for ${activeTab?.name || 'HTML file'}.`);
+            }
+          }}
+          startDebugging={handleStartDebugging}
+          runWithoutDebugging={handleRunWithoutDebugging}
+          stopDebugging={handleStopDebugging}
+          restartDebugging={handleRestartDebugging}
           toggleTerminal={() => toggleTerminalPanel()}
         />
         <div className="mainsect">
@@ -955,33 +1894,68 @@ function App() {
                 onRunCurrentFile={handleRunCurrentFile}
                 onOpenCommandPalette={openCommandPalette}
                 showRunAction={!!activeTab}
+                showLivePreviewAction={showLivePreviewAction}
+                livePreviewOpen={livePreviewOpen}
+                livePreviewMode={livePreviewMode}
+                onToggleLivePreview={handleToggleLivePreview}
+                onOpenLivePreviewTab={() => {
+                  if (openTabLivePreview()) {
+                    pushNotification(`Live preview opened in a new tab for ${activeTab?.name || 'HTML file'}.`);
+                  }
+                }}
               />
               {activeTab ? (
                 <BreadcrumbsBar activeTab={activeTab} rootName={workspace.rootName || workspace.getRootNode()?.name || ''} />
               ) : null}
-              {activeTab ? (
-                <MonacoEditor
-                  key={activeTab.id}
-                  tab={activeTab}
-                  onChange={handleEditorChange}
-                  onMount={onEditorMount}
-                  onOpenCommandPalette={openCommandPalette}
-                  settings={settings}
-                  MonacoEditorDisplay="flex"
-                  monacoEditorStyle={monacoEditorStyle}
-                />
-              ) : null}
-              {showDefaultPage ? <DefaultPage DefaultPageDisplay="flex" dimensionsDefaultPage={contentSurfaceStyle} /> : null}
+              <div className={`editor-preview-row ${livePreviewOpen && showLivePreviewAction ? 'preview-open' : ''}`}>
+                <div className="editor-preview-main">
+                  {activeTab ? (
+                    <MonacoEditor
+                      key={activeTab.id}
+                      tab={activeTab}
+                      onChange={handleEditorChange}
+                      onMount={onEditorMount}
+                      onOpenCommandPalette={openCommandPalette}
+                      settings={settings}
+                      MonacoEditorDisplay="flex"
+                      monacoEditorStyle={monacoEditorStyle}
+                    />
+                  ) : null}
+                  {showDefaultPage ? <DefaultPage DefaultPageDisplay="flex" dimensionsDefaultPage={contentSurfaceStyle} /> : null}
               {showWelcomePage ? (
-                <WelcomePage
-                  DimensionsWelcomePage={contentSurfaceStyle}
-                  WelcomePageDisplay="flex"
-                  triggerNewFile={handleCreateUntitledFile}
-                  triggerOpenFolder={handleOpenFolder}
-                  triggerOpenFile={handleOpenFileDialog}
-                  triggerNewFolder={handleCreateFolder}
+                  <WelcomePage
+                    DimensionsWelcomePage={contentSurfaceStyle}
+                    WelcomePageDisplay="flex"
+                    triggerNewFile={handleCreateUntitledFile}
+                    triggerOpenFolder={handleOpenFolder}
+                    triggerOpenFile={handleOpenFileDialog}
+                    triggerNewFolder={handleCreateFolder}
+                  />
+                ) : null}
+                </div>
+                {previewColumnOpen ? (
+                  <div
+                    className={`live-preview-resizer ${isResizingLivePreview ? 'is-active' : ''}`}
+                    onMouseDown={startLivePreviewResize}
+                    title="Resize Live Preview"
+                  />
+                ) : null}
+                <LivePreview
+                  isOpen={previewColumnOpen}
+                  htmlDocument={livePreviewDocument}
+                  width={livePreviewWidth}
+                  onRefresh={() => setLivePreviewNonce((current) => current + 1)}
+                  onOpenExternal={() => {
+                    if (openTabLivePreview()) {
+                      pushNotification(`Live preview opened in a new tab for ${activeTab?.name || 'HTML file'}.`);
+                    }
+                  }}
+                  onClose={() => {
+                    setLivePreviewOpen(false);
+                    setLivePreviewDocument('');
+                  }}
                 />
-              ) : null}
+              </div>
               <Terminal
                 isOpen={terminalOpen}
                 height={terminalHeight}
@@ -995,16 +1969,46 @@ function App() {
           </div>
           <div className="SideBarmainwrper">
             <CodeBlocks ariaExpandedisplaycodeblocks={panelDisplay('codeblocks')} />
-            <Git ariaExpandedisplaygit={panelDisplay('git')} />
+            <Git
+              ariaExpandedisplaygit={panelDisplay('git')}
+              workspace={workspace}
+              workspaceVersion={version}
+              authSession={authSession}
+              pushNotification={pushNotification}
+            />
             <Extensions ariaExpandedisplayextensions={panelDisplay('extensions')} />
-            <GitHub ariaExpandedisplaygithub={panelDisplay('github')} />
-            <Debug ariaExpandedisplaydebug={panelDisplay('debug')} />
+            <GitHub
+              ariaExpandedisplaygithub={panelDisplay('github')}
+              authSession={authSession}
+              openAccount={openAccount}
+            />
+            <Debug
+              ariaExpandedisplaydebug={panelDisplay('debug')}
+              activeTab={activeTab}
+              debugSession={debugSession}
+              breakpoints={getActiveBreakpoints()}
+              watchValues={watchValues}
+              diagnostics={debugDiagnostics}
+              onStartDebugging={handleStartDebugging}
+              onRunWithoutDebugging={handleRunWithoutDebugging}
+              onPauseDebugging={handlePauseDebugging}
+              onContinueDebugging={handleContinueDebugging}
+              onStopDebugging={handleStopDebugging}
+              onRestartDebugging={handleRestartDebugging}
+              onRunCurrentFile={handleRunCurrentFile}
+              onAddBreakpointAtCursor={handleAddBreakpointAtCursor}
+              onClearBreakpoints={handleClearBreakpoints}
+              onRemoveBreakpoint={handleRemoveBreakpoint}
+              onAddWatch={handleAddWatch}
+              onRemoveWatch={handleRemoveWatch}
+            />
             <Search
               ariaExpandedisplaysearch={panelDisplay('search')}
               workspace={workspace}
               workspaceVersion={version}
               searchFocusNonce={searchFocusNonce}
               openSearchResult={handleOpenSearchResult}
+              searchRequest={searchRequest}
             />
             <FilePioneer
               ariaExpandedisplayfilepioneer={panelDisplay('filepioneer')}

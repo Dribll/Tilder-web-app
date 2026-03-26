@@ -1,86 +1,163 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 
-const DEFAULT_PROFILE = {
-  displayName: 'Tilder User',
-  email: '',
-  syncSettings: true,
-  syncLayout: true,
-  syncShortcuts: true,
+const PROVIDER_LABELS = {
+  github: 'GitHub',
+  microsoft: 'Microsoft',
 };
 
-export default function Account({ modalType }) {
-  const [profile, setProfile] = useState(() => {
-    const saved = localStorage.getItem('tilderAccountProfile');
-    return saved ? JSON.parse(saved) : DEFAULT_PROFILE;
-  });
-  const [notice, setNotice] = useState('Connect a provider after you add OAuth client credentials and redirect URIs.');
+const PROVIDER_DESCRIPTIONS = {
+  github: 'Use GitHub for account sign-in, settings sync, and repository integration.',
+  microsoft: 'Use Microsoft for account sign-in and VS Code-style settings sync.',
+};
 
-  useEffect(() => {
-    localStorage.setItem('tilderAccountProfile', JSON.stringify(profile));
-  }, [profile]);
+function getProviderBadge(provider, authSession) {
+  const connected = Boolean(authSession?.accounts?.[provider]);
+  const configured = Boolean(authSession?.providers?.[provider]);
 
+  if (connected) {
+    return { label: 'Connected', tone: 'success' };
+  }
+
+  if (configured) {
+    return { label: 'Ready', tone: 'ready' };
+  }
+
+  return { label: 'Not Enabled', tone: 'muted' };
+}
+
+export default function Account({
+  modalType,
+  authSession,
+  authServiceStatus,
+  authServiceMessage,
+  authBusyProvider,
+  syncBusy,
+  onStartOAuth,
+  onDisconnectProvider,
+  onSetSyncProvider,
+  onToggleSyncPreference,
+  onPushSync,
+  onPullSync,
+}) {
   if (modalType !== 'Account') {
     return null;
   }
 
-  function toggle(field) {
-    setProfile((current) => ({ ...current, [field]: !current[field] }));
-  }
+  const accounts = authSession?.accounts || {};
+  const syncPreferences = authSession?.syncPreferences || {
+    syncSettings: true,
+    syncLayout: true,
+    syncShortcuts: true,
+  };
+  const connectedProviders = Object.keys(accounts);
 
   return (
     <div className="account-panel">
-      <div className="account-section">
-        <div className="account-section-title">Profile</div>
-        <label className="account-field">
-          <span>Display Name</span>
-          <input
-            type="text"
-            className="account-input"
-            value={profile.displayName}
-            onChange={(event) => setProfile((current) => ({ ...current, displayName: event.target.value }))}
-          />
-        </label>
-        <label className="account-field">
-          <span>Email</span>
-          <input
-            type="text"
-            className="account-input"
-            value={profile.email}
-            placeholder="name@example.com"
-            onChange={(event) => setProfile((current) => ({ ...current, email: event.target.value }))}
-          />
-        </label>
+      <div className={`account-service-banner ${authServiceStatus === 'error' ? 'error' : authServiceStatus === 'ready' ? 'ready' : ''}`}>
+        {authServiceStatus === 'error'
+          ? authServiceMessage || 'The Tilder auth server is not reachable.'
+          : authServiceStatus === 'ready'
+            ? 'Tilder auth server is reachable.'
+            : 'Checking Tilder auth server...'}
       </div>
 
       <div className="account-section">
-        <div className="account-section-title">Sync Targets</div>
+        <div className="account-section-title">Connected Accounts</div>
+        <div className="account-provider-stack">
+          {['github', 'microsoft'].map((provider) => {
+            const account = accounts[provider];
+            const connecting = authBusyProvider === provider;
+            const selectedForSync = authSession?.syncProvider === provider;
+            const providerLabel = PROVIDER_LABELS[provider];
+            const badge = getProviderBadge(provider, authSession);
+
+            return (
+              <div key={provider} className={`account-provider-card ${account ? 'connected' : ''}`}>
+                <div className="account-provider-summary">
+                  <div className="account-provider-copy">
+                    <div className="account-provider-head">
+                      <div className="account-provider-name">{providerLabel}</div>
+                      <span className={`account-status-badge ${badge.tone}`}>{badge.label}</span>
+                    </div>
+                    <div className="account-provider-subtitle">
+                      {account
+                        ? `${account.displayName || account.email || 'Connected'}${account.email ? ` - ${account.email}` : ''}`
+                        : PROVIDER_DESCRIPTIONS[provider]}
+                    </div>
+                  </div>
+                  {account?.avatarUrl ? <img src={account.avatarUrl} alt={account.displayName || provider} className="account-avatar" /> : null}
+                </div>
+
+                <div className="account-provider-actions">
+                  {account ? (
+                    <>
+                      <button
+                        type="button"
+                        className={`account-chip ${selectedForSync ? 'active' : ''}`}
+                        disabled={syncBusy}
+                        onClick={() => onSetSyncProvider(provider)}
+                      >
+                        {selectedForSync ? 'Sync Provider' : 'Use For Sync'}
+                      </button>
+                      <button type="button" className="account-provider-btn" disabled={connecting || syncBusy} onClick={() => onDisconnectProvider(provider)}>
+                        Disconnect
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="account-provider-btn"
+                      disabled={connecting || authServiceStatus === 'loading'}
+                      onClick={() => onStartOAuth(provider)}
+                    >
+                      {connecting ? 'Opening...' : `Connect ${providerLabel}`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="account-section">
+        <div className="account-section-title">Settings Sync</div>
+        <div className="account-sync-summary">
+          {authSession?.syncProvider
+            ? `Sync target: ${PROVIDER_LABELS[authSession.syncProvider]}`
+            : connectedProviders.length
+              ? 'Choose a connected provider for settings sync.'
+              : 'Connect GitHub or Microsoft to enable settings sync.'}
+        </div>
         <div className="account-toggle-grid">
-          <button type="button" className={`account-chip ${profile.syncSettings ? 'active' : ''}`} onClick={() => toggle('syncSettings')}>
+          <button type="button" className={`account-chip ${syncPreferences.syncSettings ? 'active' : ''}`} disabled={syncBusy} onClick={() => onToggleSyncPreference('syncSettings')}>
             Settings
           </button>
-          <button type="button" className={`account-chip ${profile.syncLayout ? 'active' : ''}`} onClick={() => toggle('syncLayout')}>
+          <button type="button" className={`account-chip ${syncPreferences.syncLayout ? 'active' : ''}`} disabled={syncBusy} onClick={() => onToggleSyncPreference('syncLayout')}>
             Layout
           </button>
-          <button type="button" className={`account-chip ${profile.syncShortcuts ? 'active' : ''}`} onClick={() => toggle('syncShortcuts')}>
+          <button type="button" className={`account-chip ${syncPreferences.syncShortcuts ? 'active' : ''}`} disabled={syncBusy} onClick={() => onToggleSyncPreference('syncShortcuts')}>
             Shortcuts
           </button>
         </div>
-      </div>
-
-      <div className="account-section">
-        <div className="account-section-title">Providers</div>
         <div className="account-provider-row">
-          <button type="button" className="account-provider-btn" onClick={() => setNotice('GitHub OAuth needs a client id, callback URL, and token exchange endpoint before sign-in can go live.')}>
-            GitHub
+          <button
+            type="button"
+            className="account-provider-btn"
+            disabled={!authSession?.syncProvider || syncBusy}
+            onClick={onPullSync}
+          >
+            {syncBusy ? 'Syncing...' : 'Pull From Cloud'}
           </button>
-          <button type="button" className="account-provider-btn" onClick={() => setNotice('Google OAuth needs a configured consent screen, callback URL, and token exchange endpoint before sign-in can go live.')}>
-            Google
-          </button>
-          <button type="button" className="account-provider-btn" onClick={() => setNotice('Microsoft OAuth needs an app registration, callback URL, and token exchange endpoint before sign-in can go live.')}>
-            Microsoft
+          <button
+            type="button"
+            className="account-provider-btn"
+            disabled={!authSession?.syncProvider || syncBusy}
+            onClick={onPushSync}
+          >
+            {syncBusy ? 'Syncing...' : 'Push To Cloud'}
           </button>
         </div>
-        <div className="account-notice">{notice}</div>
       </div>
     </div>
   );

@@ -23,6 +23,44 @@ function cloneNode(node) {
   };
 }
 
+function isBinaryFileName(name = '') {
+  const extension = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+  return [
+    '7z',
+    'avi',
+    'bmp',
+    'class',
+    'dll',
+    'eot',
+    'exe',
+    'gif',
+    'gz',
+    'ico',
+    'jar',
+    'jpeg',
+    'jpg',
+    'lock',
+    'map',
+    'mov',
+    'mp3',
+    'mp4',
+    'o',
+    'otf',
+    'pdf',
+    'png',
+    'pyc',
+    'so',
+    'tar',
+    'ttf',
+    'wav',
+    'webm',
+    'webp',
+    'woff',
+    'woff2',
+    'zip',
+  ].includes(extension);
+}
+
 const workspace = {
   adapter: typeof window !== 'undefined' && window.__TAURI__ ? 'tauri' : 'browser',
   rootHandle: null,
@@ -38,26 +76,41 @@ const workspace = {
     const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
     const map = {
       c: 'c',
+      cc: 'cpp',
+      conf: 'ini',
       cpp: 'cpp',
       cs: 'csharp',
       css: 'css',
+      env: 'shell',
       go: 'go',
+      gradle: 'java',
       h: 'cpp',
       html: 'html',
+      htm: 'html',
+      ini: 'ini',
       java: 'java',
       js: 'javascript',
+      mjs: 'javascript',
+      cjs: 'javascript',
       json: 'json',
       jsx: 'javascript',
+      less: 'css',
+      mf: 'ini',
       md: 'markdown',
+      properties: 'ini',
       php: 'php',
       py: 'python',
+      pyw: 'python',
       rb: 'ruby',
       rs: 'rust',
+      sass: 'scss',
+      scss: 'scss',
       sh: 'shell',
       sql: 'sql',
       ts: 'typescript',
       tsx: 'typescript',
       txt: 'plaintext',
+      toml: 'ini',
       vue: 'html',
       xml: 'xml',
       yml: 'yaml',
@@ -118,6 +171,62 @@ const workspace = {
     }
 
     visit(root);
+
+    return {
+      rootName: this.rootName || root.name || 'workspace',
+      entries,
+    };
+  },
+
+  async getSyncPayload() {
+    const root = this.getRootNode();
+    if (!root) {
+      return null;
+    }
+
+    const entries = [];
+
+    const visit = async (node) => {
+      if (node.path !== 'root') {
+        if (node.path === '.git' || node.path.startsWith('.git/') || node.path.includes('/.git/')) {
+          return;
+        }
+
+        if (node.type === 'folder') {
+          entries.push({
+            path: node.path,
+            type: node.type,
+          });
+        } else {
+          const openedTab = this.tabs.find((entry) => entry.path === node.path);
+          let content = openedTab?.content;
+
+          if (content == null && node.isDraft) {
+            content = node.content || '';
+          }
+
+          if (content == null && !isBinaryFileName(node.name)) {
+            try {
+              content = await this.readFile(node);
+            } catch {
+              content = '';
+            }
+          }
+
+          entries.push({
+            path: node.path,
+            type: node.type,
+            content: typeof content === 'string' ? content : '',
+          });
+        }
+      }
+
+      for (const child of node.children || []) {
+        await visit(child);
+      }
+    };
+
+    await visit(root);
 
     return {
       rootName: this.rootName || root.name || 'workspace',

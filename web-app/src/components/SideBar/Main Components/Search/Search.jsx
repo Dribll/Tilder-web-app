@@ -131,7 +131,38 @@ function getLinePreview(content, index) {
   };
 }
 
-export default function Search({ ariaExpandedisplaysearch, workspace, workspaceVersion, searchFocusNonce, openSearchResult }) {
+function collectSymbols(content = '') {
+  const patterns = [
+    { type: 'function', regex: /(?:export\s+)?function\s+([A-Za-z0-9_]+)\s*\(/g },
+    { type: 'class', regex: /(?:export\s+)?class\s+([A-Za-z0-9_]+)/g },
+    { type: 'const', regex: /(?:export\s+)?const\s+([A-Za-z0-9_]+)\s*=/g },
+    { type: 'let', regex: /(?:export\s+)?let\s+([A-Za-z0-9_]+)\s*=/g },
+    { type: 'var', regex: /(?:export\s+)?var\s+([A-Za-z0-9_]+)\s*=/g },
+    { type: 'interface', regex: /(?:export\s+)?interface\s+([A-Za-z0-9_]+)/g },
+    { type: 'type', regex: /(?:export\s+)?type\s+([A-Za-z0-9_]+)/g },
+  ];
+
+  const symbols = [];
+
+  patterns.forEach(({ type, regex }) => {
+    let match = regex.exec(content);
+    while (match) {
+      const preview = getLinePreview(content, match.index);
+      symbols.push({
+        name: match[1],
+        type,
+        line: preview.line,
+        column: preview.column,
+        preview: preview.preview,
+      });
+      match = regex.exec(content);
+    }
+  });
+
+  return symbols;
+}
+
+export default function Search({ ariaExpandedisplaysearch, workspace, workspaceVersion, searchFocusNonce, openSearchResult, searchRequest }) {
   const [mode, setMode] = useState('content');
   const [query, setQuery] = useState('');
   const [includeFilter, setIncludeFilter] = useState('');
@@ -169,6 +200,24 @@ export default function Search({ ariaExpandedisplaysearch, workspace, workspaceV
 
     return () => clearTimeout(timer);
   }, [ariaExpandedisplaysearch, searchFocusNonce]);
+
+  useEffect(() => {
+    if (ariaExpandedisplaysearch !== 'flex' || !searchRequest) {
+      return;
+    }
+
+    if (searchRequest.mode) {
+      setMode(searchRequest.mode);
+    }
+
+    if (typeof searchRequest.query === 'string') {
+      setQuery(searchRequest.query);
+    }
+
+    if (searchRequest.scope) {
+      setScope(searchRequest.scope);
+    }
+  }, [ariaExpandedisplaysearch, searchRequest]);
 
   useEffect(() => {
     if (ariaExpandedisplaysearch !== 'flex') {
@@ -225,6 +274,41 @@ export default function Search({ ariaExpandedisplaysearch, workspace, workspaceV
           if (!cancelled) {
             setResults(fileResults);
             setSummary({ files: fileResults.length, matches: fileResults.length });
+            setRecentQueries((current) => [query.trim(), ...current.filter((entry) => entry !== query.trim())].slice(0, 5));
+          }
+          return;
+        }
+
+        if (mode === 'symbols') {
+          const symbolResults = [];
+
+          for (const entry of pool) {
+            const content =
+              entry.tab?.content ??
+              (entry.node?.isDraft ? entry.node.content || '' : entry.node ? await workspace.readFile(entry.node) : '');
+
+            if (!content) {
+              continue;
+            }
+
+            const matches = collectSymbols(content).filter((symbol) => {
+              matcher.lastIndex = 0;
+              return matcher.test(`${symbol.name} ${symbol.type}`);
+            });
+
+            if (matches.length) {
+              symbolResults.push({
+                path: entry.path,
+                name: entry.name,
+                matches,
+              });
+            }
+          }
+
+          const totalSymbols = symbolResults.reduce((total, result) => total + result.matches.length, 0);
+          if (!cancelled) {
+            setResults(symbolResults);
+            setSummary({ files: symbolResults.length, matches: totalSymbols });
             setRecentQueries((current) => [query.trim(), ...current.filter((entry) => entry !== query.trim())].slice(0, 5));
           }
           return;
@@ -309,6 +393,9 @@ export default function Search({ ariaExpandedisplaysearch, workspace, workspaceV
           <button type="button" className={`search-mode-btn ${mode === 'files' ? 'active' : ''}`} onClick={() => setMode('files')}>
             Files
           </button>
+          <button type="button" className={`search-mode-btn ${mode === 'symbols' ? 'active' : ''}`} onClick={() => setMode('symbols')}>
+            Symbols
+          </button>
         </div>
 
         <div className="search-input-group">
@@ -318,7 +405,7 @@ export default function Search({ ariaExpandedisplaysearch, workspace, workspaceV
             className="search-input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={mode === 'content' ? 'Search across files' : 'Search file names'}
+            placeholder={mode === 'content' ? 'Search across files' : mode === 'files' ? 'Search file names' : 'Search symbols'}
             spellCheck={false}
           />
           <div className="search-toggle-row">
@@ -409,7 +496,7 @@ export default function Search({ ariaExpandedisplaysearch, workspace, workspaceV
                 <span className="search-result-path">{result.path}</span>
               </button>
 
-              {mode === 'content' ? (
+              {mode === 'content' || mode === 'symbols' ? (
                 <div className="search-result-matches">
                   {result.matches.map((match, index) => (
                     <button
@@ -419,9 +506,9 @@ export default function Search({ ariaExpandedisplaysearch, workspace, workspaceV
                       onClick={() => openSearchResult({ ...result, ...match })}
                     >
                       <span className="search-result-line">
-                        {match.line}:{match.column}
+                        {mode === 'symbols' ? `${match.type} • ${match.line}:${match.column}` : `${match.line}:${match.column}`}
                       </span>
-                      <span className="search-result-preview">{match.preview}</span>
+                      <span className="search-result-preview">{mode === 'symbols' ? `${match.name} — ${match.preview}` : match.preview}</span>
                     </button>
                   ))}
                 </div>

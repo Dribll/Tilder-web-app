@@ -233,10 +233,22 @@ export async function runLocalFile({ name, language, source }) {
   }
 }
 
-export async function syncWorkspaceMirror({ rootName, entries = [] }) {
+export async function syncWorkspaceMirror({ rootName, entries = [], preserveGit = false }) {
   const baseDir = path.join(os.tmpdir(), 'tilder-workspaces', sanitizeFolderName(rootName || 'workspace'));
-  await fs.rm(baseDir, { recursive: true, force: true });
-  await fs.mkdir(baseDir, { recursive: true });
+
+  if (preserveGit) {
+    await fs.mkdir(baseDir, { recursive: true });
+    const existingEntries = await fs.readdir(baseDir, { withFileTypes: true }).catch(() => []);
+
+    await Promise.all(
+      existingEntries
+        .filter((entry) => entry.name !== '.git')
+        .map((entry) => fs.rm(path.join(baseDir, entry.name), { recursive: true, force: true }))
+    );
+  } else {
+    await fs.rm(baseDir, { recursive: true, force: true });
+    await fs.mkdir(baseDir, { recursive: true });
+  }
 
   for (const entry of entries) {
     const normalizedPath = String(entry.path || '')
@@ -254,7 +266,7 @@ export async function syncWorkspaceMirror({ rootName, entries = [] }) {
     }
 
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
-    await fs.writeFile(targetPath, '', 'utf8');
+    await fs.writeFile(targetPath, typeof entry.content === 'string' ? entry.content : '', 'utf8');
   }
 
   return { cwd: baseDir };

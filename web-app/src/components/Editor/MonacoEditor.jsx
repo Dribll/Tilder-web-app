@@ -1,5 +1,6 @@
 import React from 'react';
 import { Editor } from '@monaco-editor/react';
+import { registerSnippetProviders } from './snippetProviders.js';
 
 export default function MonacoEditor({ settings, tab, onChange, onMount, MonacoEditorDisplay, monacoEditorStyle, onOpenCommandPalette }) {
   if (!settings || !tab) {
@@ -7,6 +8,8 @@ export default function MonacoEditor({ settings, tab, onChange, onMount, MonacoE
   }
 
   function handleMount(editor, monaco) {
+    registerSnippetProviders(monaco);
+
     monaco.editor.defineTheme('tilder-night', {
       base: 'vs-dark',
       inherit: true,
@@ -66,10 +69,18 @@ export default function MonacoEditor({ settings, tab, onChange, onMount, MonacoE
           tabSize: tab.tabSize ?? settings.tabSize,
           insertSpaces: tab.insertSpaces ?? settings.insertSpaces,
           automaticLayout: true,
+          glyphMargin: true,
           suggestOnTriggerCharacters: true,
-          quickSuggestions: true,
+          quickSuggestions: {
+            other: true,
+            comments: false,
+            strings: true,
+          },
+          snippetSuggestions: 'top',
+          acceptSuggestionOnEnter: 'on',
+          acceptSuggestionOnCommitCharacter: true,
           tabCompletion: 'on',
-          wordBasedSuggestions: 'currentDocument',
+          wordBasedSuggestions: 'allDocuments',
         }}
       />
     </div>
