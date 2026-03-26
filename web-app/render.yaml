@@ -10,7 +10,7 @@ services:
       - key: NODE_VERSION
         value: 22
       - key: PUBLIC_BASE_URL
-        value: https://tildercode.onrender.com
+        value: https://tilder-web-app.onrender.com
       - key: MICROSOFT_TENANT_ID
         value: common
       - key: GITHUB_CLIENT_ID

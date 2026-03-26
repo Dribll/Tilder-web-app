@@ -32,7 +32,7 @@ Use these environment values in Render:
 
 ```env
 PORT=10000
-PUBLIC_BASE_URL=https://tildercode.onrender.com
+PUBLIC_BASE_URL=https://tilder-web-app.onrender.com
 ```
 
 Add the provider credentials in Render environment variables too.
@@ -46,7 +46,7 @@ Recommended:
 Suggested callback URLs:
 
 - Local dev: `http://localhost:3210/api/auth/github/callback`
-- Render: `https://tildercode.onrender.com/api/auth/github/callback`
+- Render: `https://tilder-web-app.onrender.com/api/auth/github/callback`
 
 Because GitHub OAuth apps allow a single callback URL, using separate apps keeps local and production clean.
 
@@ -55,7 +55,7 @@ Because GitHub OAuth apps allow a single callback URL, using separate apps keeps
 Suggested redirect URIs:
 
 - `http://localhost:3210/api/auth/microsoft/callback`
-- `https://tildercode.onrender.com/api/auth/microsoft/callback`
+- `https://tilder-web-app.onrender.com/api/auth/microsoft/callback`
 
 Microsoft supports multiple redirect URIs in the same app registration, so local and production can usually share one app.
 

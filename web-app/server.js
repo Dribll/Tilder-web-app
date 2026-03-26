@@ -79,12 +79,28 @@ function parseCookies(request) {
 }
 
 function buildBaseUrl(request) {
+  const protocol = request.get('x-forwarded-proto') || request.protocol || 'http';
+  const requestOrigin = `${protocol}://${request.get('host')}`;
+
   if (publicBaseUrl) {
-    return publicBaseUrl;
+    try {
+      const configuredUrl = new URL(publicBaseUrl);
+      const requestUrl = new URL(requestOrigin);
+      const loopbackHosts = new Set(['localhost', '127.0.0.1']);
+      const configuredIsLoopback = loopbackHosts.has(configuredUrl.hostname);
+      const requestIsLoopback = loopbackHosts.has(requestUrl.hostname);
+
+      if (configuredIsLoopback && !requestIsLoopback) {
+        return requestOrigin;
+      }
+
+      return configuredUrl.origin;
+    } catch {
+      return publicBaseUrl;
+    }
   }
 
-  const protocol = request.get('x-forwarded-proto') || request.protocol || 'http';
-  return `${protocol}://${request.get('host')}`;
+  return requestOrigin;
 }
 
 function ensureSessionRecord(request, response) {
