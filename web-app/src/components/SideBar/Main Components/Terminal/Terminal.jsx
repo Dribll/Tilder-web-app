@@ -4,6 +4,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { executeTerminalCommand, getDisplayPath } from '../../../../core/terminalBridge.js';
+import { getApiOrigin } from '../../../../core/apiBase.js';
 import { syncTerminalWorkspaceRoot } from '../../../../core/codeRunner.js';
 
 function isPrintableInput(data) {
@@ -11,11 +12,20 @@ function isPrintableInput(data) {
 }
 
 function getBridgeConnectionConfig() {
+  const apiOrigin = getApiOrigin();
   const hostname = window.location.hostname;
   const port = window.location.port;
   const isLocalDevHost =
     (hostname === 'localhost' || hostname === '127.0.0.1') &&
     (port === '5173' || port === '4173');
+
+  if (apiOrigin && apiOrigin !== window.location.origin) {
+    return {
+      url: apiOrigin,
+      mode: 'hosted-shell',
+      banner: 'Connecting to Tilder API service...',
+    };
+  }
 
   if (isLocalDevHost) {
     return {
@@ -244,6 +254,7 @@ export default function Terminal({ isOpen, height, onResizeStart, onClose, works
         transports: ['websocket'],
         timeout: 1500,
         reconnection: false,
+        withCredentials: true,
         query: {
           cols: String(terminal.cols || 120),
           rows: String(terminal.rows || 30),

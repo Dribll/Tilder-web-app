@@ -1,3 +1,5 @@
+import { apiFetch } from './apiBase.js';
+
 async function parseJson(response) {
   const raw = await response.text();
   let data = {};
@@ -24,7 +26,7 @@ async function parseJson(response) {
 }
 
 async function post(path, payload) {
-  const response = await fetch(path, {
+  const response = await apiFetch(path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -28,6 +28,7 @@ import LivePreview from './components/LivePreview/LivePreview.jsx';
 import shortcutManager, { formatBindingLabel, normalizeBindingString } from './components/ShortcutManager.js';
 import defaultSettings from './components/Settings/defaultSettings.js';
 import workspace from './core/workspace.js';
+import { getApiOrigin } from './core/apiBase.js';
 import { beginOAuth, disconnectProvider, fetchAuthSession, openDesktopOAuthUrl, pollDesktopOAuth, pullSyncedState, pushSyncedState, updateSyncPreferences } from './core/accountApi.js';
 import { getEffectiveBinding, KEYBINDING_COMMANDS } from './core/keybindings.js';
 import { fetchRunnerLanguages, formatLocalRunResult, formatRunResult, resolveRunnerLanguage, runCode, runCodeLocally } from './core/codeRunner.js';
@@ -225,6 +226,11 @@ function App() {
 
     function getAllowedOAuthOrigins() {
       const origins = new Set([window.location.origin]);
+      const apiOrigin = getApiOrigin();
+
+      if (apiOrigin) {
+        origins.add(apiOrigin);
+      }
 
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         origins.add(`${window.location.protocol}//${window.location.hostname}:3210`);
