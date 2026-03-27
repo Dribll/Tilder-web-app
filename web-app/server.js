@@ -17,6 +17,20 @@ const appRootDir = process.env.TILDER_APP_ROOT || __dirname;
 const distPath = process.env.TILDER_DIST_DIR || path.join(appRootDir, 'dist');
 const dataDir = process.env.TILDER_DATA_DIR || path.join(appRootDir, 'data');
 const syncStorePath = path.join(dataDir, 'sync-store.json');
+const publicBaseUrl = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
+const frontendBaseUrl = (process.env.FRONTEND_BASE_URL || '').trim().replace(/\/$/, '');
+const configuredCorsOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((value) => value.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+const allowedCorsOrigins = new Set([
+  frontendBaseUrl,
+  ...configuredCorsOrigins,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+].filter(Boolean));
 
 const app = express();
 app.set('trust proxy', true);
@@ -24,8 +38,11 @@ app.set('trust proxy', true);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: true,
+    origin(origin, callback) {
+      callback(null, isAllowedCorsOrigin(origin));
+    },
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 });
 
@@ -37,8 +54,15 @@ const runnerBaseUrl = process.env.TILDER_RUNNER_URL || 'https://ce.judge0.com';
 const gitBinary = process.env.GIT_BINARY || 'git';
 const githubSyncRepoName = process.env.TILDER_GITHUB_SYNC_REPO || 'tilder-settings-sync';
 const githubSyncFilePath = process.env.TILDER_GITHUB_SYNC_FILE || 'settings-sync.json';
-const publicBaseUrl = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
 const sessionCookieName = 'tilder.sid';
+const sessionPayloadCookieName = 'tilder.session';
+const sessionSecretMaterial =
+  process.env.TILDER_SESSION_SECRET ||
+  process.env.SESSION_SECRET ||
+  process.env.GITHUB_CLIENT_SECRET ||
+  process.env.MICROSOFT_CLIENT_SECRET ||
+  'tilder-session-secret';
+const sessionEncryptionKey = crypto.createHash('sha256').update(String(sessionSecretMaterial)).digest();
 const sessionTtlMs = 1000 * 60 * 60 * 24 * 30;
 const defaultSyncPreferences = {
   syncSettings: true,
@@ -68,6 +92,16 @@ const providerConfig = {
 };
 
 app.use(express.json({ limit: '4mb' }));
+app.use((request, response, next) => {
+  applyCorsHeaders(request, response);
+
+  if (request.method === 'OPTIONS') {
+    response.status(isAllowedCorsOrigin(request.get('origin')) ? 204 : 403).end();
+    return;
+  }
+
+  next();
+});
 
 function parseCookies(request) {
   const raw = request.headers.cookie || '';
@@ -80,6 +114,49 @@ function parseCookies(request) {
     bucket[key] = decodeURIComponent(valueParts.join('=') || '');
     return bucket;
   }, {});
+}
+
+function normalizeOrigin(value) {
+  try {
+    return new URL(String(value || '').trim()).origin;
+  } catch {
+    return '';
+  }
+}
+
+function isAllowedCorsOrigin(origin) {
+  if (!origin) {
+    return true;
+  }
+
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (!normalizedOrigin) {
+    return false;
+  }
+
+  if (allowedCorsOrigins.has(normalizedOrigin)) {
+    return true;
+  }
+
+  const normalizedPublicBaseUrl = normalizeOrigin(publicBaseUrl);
+  if (normalizedPublicBaseUrl && normalizedOrigin === normalizedPublicBaseUrl) {
+    return true;
+  }
+
+  return false;
+}
+
+function applyCorsHeaders(request, response) {
+  const origin = request.get('origin');
+  if (!origin || !isAllowedCorsOrigin(origin)) {
+    return;
+  }
+
+  response.setHeader('Access-Control-Allow-Origin', origin);
+  response.setHeader('Access-Control-Allow-Credentials', 'true');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  response.setHeader('Vary', 'Origin');
 }
 
 function buildBaseUrl(request) {
@@ -107,31 +184,155 @@ function buildBaseUrl(request) {
   return requestOrigin;
 }
 
+function base64UrlEncode(value) {
+  return Buffer.from(value)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function base64UrlDecode(value) {
+  const normalized = String(value || '')
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const padLength = (4 - (normalized.length % 4 || 4)) % 4;
+  return Buffer.from(normalized + '='.repeat(padLength), 'base64');
+}
+
+function sanitizePersistedAccount(account) {
+  if (!account || typeof account !== 'object' || !account.id) {
+    return null;
+  }
+
+  const avatarUrl =
+    typeof account.avatarUrl === 'string' && !account.avatarUrl.startsWith('data:') && account.avatarUrl.length < 2048
+      ? account.avatarUrl
+      : '';
+
+  return {
+    id: String(account.id),
+    username: typeof account.username === 'string' ? account.username : '',
+    displayName: typeof account.displayName === 'string' ? account.displayName : '',
+    email: typeof account.email === 'string' ? account.email : '',
+    avatarUrl,
+    accessToken: typeof account.accessToken === 'string' ? account.accessToken : '',
+    refreshToken: typeof account.refreshToken === 'string' ? account.refreshToken : '',
+    connectedAt: typeof account.connectedAt === 'string' ? account.connectedAt : null,
+  };
+}
+
+function snapshotSession(session) {
+  return {
+    id: String(session.id || crypto.randomUUID()),
+    createdAt: Number(session.createdAt || Date.now()),
+    updatedAt: Number(session.updatedAt || Date.now()),
+    accounts: Object.fromEntries(
+      Object.entries(session.accounts || {})
+        .map(([provider, account]) => [provider, sanitizePersistedAccount(account)])
+        .filter(([, account]) => Boolean(account))
+    ),
+    syncProvider: typeof session.syncProvider === 'string' ? session.syncProvider : null,
+    syncPreferences: {
+      ...defaultSyncPreferences,
+      ...(session.syncPreferences || {}),
+    },
+  };
+}
+
+function createSessionRecord(seed = {}) {
+  const snapshot = snapshotSession(seed);
+  return {
+    id: snapshot.id,
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.updatedAt,
+    accounts: snapshot.accounts,
+    syncProvider: snapshot.syncProvider,
+    syncPreferences: snapshot.syncPreferences,
+  };
+}
+
+function encodeSessionPayload(session) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', sessionEncryptionKey, iv);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(snapshotSession(session)), 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return `${base64UrlEncode(iv)}.${base64UrlEncode(authTag)}.${base64UrlEncode(encrypted)}`;
+}
+
+function decodeSessionPayload(rawValue) {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const [ivPart, authTagPart, dataPart] = String(rawValue).split('.');
+    if (!ivPart || !authTagPart || !dataPart) {
+      return null;
+    }
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', sessionEncryptionKey, base64UrlDecode(ivPart));
+    decipher.setAuthTag(base64UrlDecode(authTagPart));
+    const decrypted = Buffer.concat([decipher.update(base64UrlDecode(dataPart)), decipher.final()]).toString('utf8');
+    const parsed = JSON.parse(decrypted);
+
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    if (Date.now() - Number(parsed.updatedAt || 0) > sessionTtlMs) {
+      return null;
+    }
+
+    return createSessionRecord(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function getSessionCookieSuffix(request) {
+  const protocol = request.get('x-forwarded-proto') || request.protocol || 'http';
+  if (protocol === 'https') {
+    return `Path=/; HttpOnly; SameSite=None; Secure; Max-Age=${Math.floor(sessionTtlMs / 1000)}`;
+  }
+
+  return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(sessionTtlMs / 1000)}`;
+}
+
+function writeSessionCookies(request, response, session) {
+  const suffix = getSessionCookieSuffix(request);
+  response.setHeader('Set-Cookie', [
+    `${sessionCookieName}=${encodeURIComponent(session.id)}; ${suffix}`,
+    `${sessionPayloadCookieName}=${encodeURIComponent(encodeSessionPayload(session))}; ${suffix}`,
+  ]);
+}
+
 function ensureSessionRecord(request, response) {
   const cookies = parseCookies(request);
   let sessionId = cookies[sessionCookieName];
   let session = sessionId ? sessions.get(sessionId) : null;
 
   if (!session) {
+    session = decodeSessionPayload(cookies[sessionPayloadCookieName]);
+    if (session) {
+      sessionId = session.id;
+      sessions.set(sessionId, session);
+    }
+  }
+
+  if (!session) {
     sessionId = crypto.randomUUID();
-    session = {
+    session = createSessionRecord({
       id: sessionId,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
       accounts: {},
       syncProvider: null,
       syncPreferences: { ...defaultSyncPreferences },
-    };
+    });
     sessions.set(sessionId, session);
   }
 
   session.updatedAt = Date.now();
   request.session = session;
-  response.setHeader(
-    'Set-Cookie',
-    `${sessionCookieName}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(sessionTtlMs / 1000)}`
-  );
-
   return session;
 }
 
@@ -689,6 +890,36 @@ async function collectScmStatus(payload, session) {
 
 app.use((request, response, next) => {
   ensureSessionRecord(request, response);
+
+  let sessionCommitted = false;
+  const commitSession = () => {
+    if (sessionCommitted || response.headersSent || !request.session) {
+      return;
+    }
+
+    writeSessionCookies(request, response, request.session);
+    sessionCommitted = true;
+  };
+
+  const originalJson = response.json.bind(response);
+  const originalSend = response.send.bind(response);
+  const originalRedirect = response.redirect.bind(response);
+
+  response.json = function patchedJson(...args) {
+    commitSession();
+    return originalJson(...args);
+  };
+
+  response.send = function patchedSend(...args) {
+    commitSession();
+    return originalSend(...args);
+  };
+
+  response.redirect = function patchedRedirect(...args) {
+    commitSession();
+    return originalRedirect(...args);
+  };
+
   next();
 });
 

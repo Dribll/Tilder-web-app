@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { apiFetch, buildApiUrl, getClientOrigin } from './apiBase.js';
 
 async function parseJson(response) {
   const raw = await response.text();
@@ -42,15 +43,14 @@ export async function beginOAuth(provider) {
   const flow = shouldUseRedirectOAuth() ? 'desktop' : 'popup';
 
   if (flow === 'desktop') {
-    const response = await fetch('/api/auth/desktop/start', {
+    const response = await apiFetch('/api/auth/desktop/start', {
       method: 'POST',
-      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         provider,
-        client_origin: window.location.origin,
+        client_origin: getClientOrigin(),
       }),
     });
     const data = await parseJson(response);
@@ -62,7 +62,7 @@ export async function beginOAuth(provider) {
     };
   }
 
-  const url = `/api/auth/${provider}/start?client_origin=${encodeURIComponent(window.location.origin)}&flow=${encodeURIComponent(flow)}`;
+  const url = buildApiUrl(`/api/auth/${provider}/start?client_origin=${encodeURIComponent(getClientOrigin())}&flow=${encodeURIComponent(flow)}`);
 
   const popup = window.open(
     url,
@@ -74,25 +74,20 @@ export async function beginOAuth(provider) {
 }
 
 export async function pollDesktopOAuth(desktopSessionId) {
-  const response = await fetch(`/api/auth/desktop/status?desktopSessionId=${encodeURIComponent(desktopSessionId)}`, {
-    credentials: 'include',
-  });
+  const response = await apiFetch(`/api/auth/desktop/status?desktopSessionId=${encodeURIComponent(desktopSessionId)}`);
 
   return parseJson(response);
 }
 
 export async function fetchAuthSession() {
-  const response = await fetch('/api/auth/session', {
-    credentials: 'include',
-  });
+  const response = await apiFetch('/api/auth/session');
 
   return parseJson(response);
 }
 
 export async function disconnectProvider(provider) {
-  const response = await fetch('/api/auth/logout', {
+  const response = await apiFetch('/api/auth/logout', {
     method: 'POST',
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
@@ -103,9 +98,8 @@ export async function disconnectProvider(provider) {
 }
 
 export async function updateSyncPreferences(payload) {
-  const response = await fetch('/api/sync/preferences', {
+  const response = await apiFetch('/api/sync/preferences', {
     method: 'POST',
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
@@ -116,9 +110,8 @@ export async function updateSyncPreferences(payload) {
 }
 
 export async function pushSyncedState(payload) {
-  const response = await fetch('/api/sync/push', {
+  const response = await apiFetch('/api/sync/push', {
     method: 'POST',
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
@@ -129,17 +122,13 @@ export async function pushSyncedState(payload) {
 }
 
 export async function pullSyncedState() {
-  const response = await fetch('/api/sync/pull', {
-    credentials: 'include',
-  });
+  const response = await apiFetch('/api/sync/pull');
 
   return parseJson(response);
 }
 
 export async function fetchGitHubRepos() {
-  const response = await fetch('/api/github/repos', {
-    credentials: 'include',
-  });
+  const response = await apiFetch('/api/github/repos');
 
   return parseJson(response);
 }

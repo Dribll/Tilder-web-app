@@ -1,3 +1,5 @@
+import { apiFetch } from './apiBase.js';
+
 const LANGUAGE_NAME_HINTS = {
   c: ['C (GCC 9.2.0)', 'C (Clang 7.0.1)'],
   cpp: ['C++ (GCC 9.2.0)', 'C++ (Clang 7.0.1)'],
@@ -26,7 +28,7 @@ function normalizeName(value = '') {
 }
 
 export async function fetchRunnerLanguages() {
-  const response = await fetch('/api/runner/languages');
+  const response = await apiFetch('/api/runner/languages');
   if (!response.ok) {
     throw new Error('Unable to load runner languages.');
   }
@@ -69,7 +71,7 @@ export function resolveRunnerLanguage(activeTab, languages) {
 }
 
 export async function runCode({ source, languageId, stdin = '' }) {
-  const response = await fetch('/api/runner/run', {
+  const response = await apiFetch('/api/runner/run', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -89,7 +91,7 @@ export async function runCode({ source, languageId, stdin = '' }) {
 }
 
 export async function runCodeLocally({ name, language, source }) {
-  const response = await fetch('/api/terminal/run-file', {
+  const response = await apiFetch('/api/terminal/run-file', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -109,7 +111,7 @@ export async function runCodeLocally({ name, language, source }) {
 }
 
 export async function syncTerminalWorkspaceRoot(snapshot) {
-  const response = await fetch('/api/terminal/workspace-root', {
+  const response = await apiFetch('/api/terminal/workspace-root', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

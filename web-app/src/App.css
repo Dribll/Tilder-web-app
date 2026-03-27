@@ -981,7 +981,7 @@ input[type="checkbox"]:checked::after {
 .easterEgg {
     margin-left: -6px;
     flex-direction: column;
-    overflow: scroll;
+    overflow-y: scroll;
     height: 95% !important;
     border-top-right-radius: 0px;
     border-bottom-right-radius: 12px;
@@ -1913,7 +1913,7 @@ select.settingsInput {
     background:
         radial-gradient(circle at top right, rgba(96, 98, 192, 0.08), transparent 18%),
         linear-gradient(180deg, rgba(16, 17, 30, 0.98), rgba(10, 11, 20, 0.98));
-    overflow: scroll;
+    overflow-y: scroll;
 }
 
 .debug-header {
