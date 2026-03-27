@@ -1,5 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import tilderIcon from '../../assets/Tilder_icon.png';
 
 function MenuBar(props) {
   function quit() {
@@ -13,7 +14,7 @@ function MenuBar(props) {
       <nav>
         <div id="sidebarControls">
           <div id="header_icon">
-            <img src="/Tilder_icon.png" alt="tilder_icon_header" aria-label="Tilder" />
+            <img src={tilderIcon} alt="tilder_icon_header" aria-label="Tilder" />
           </div>
           <div className="navigation">
             <div className="dropdown">

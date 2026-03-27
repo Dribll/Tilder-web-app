@@ -710,7 +710,7 @@ input[type="text"] {
     overflow-y: scroll;
     display: block;
     border: var(--dialogue-border-color);
-    background: url(/coding_new_file_background3.jpg);
+    background: url('./assets/coding_new_file_background3.jpg');
     position: absolute;
     z-index: 7;
     width: 36vw;
@@ -834,7 +834,7 @@ input[type="checkbox"]:checked::after {
 }
 
 .githubicon:hover {
-    cursor: url('/web-app/githubicon.png') 16 16, pointer;
+    cursor: pointer;
 }
 
 .modal {

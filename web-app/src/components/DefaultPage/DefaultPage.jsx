@@ -1,11 +1,12 @@
 import React from 'react'
+import tilderIcon from '../../assets/Tilder_icon.png';
 
 export default function DefaultPage(props) {
     return (
         <>
             <div id="defaultPage" className={`d-${props.DefaultPageDisplay}`} style={props.dimensionsDefaultPage}>
                 <div className="defaultPageSection">
-                    <img src="/Tilder_icon.png" alt="" />
+                    <img src={tilderIcon} alt="" />
                 </div>
                 <div className="defaultPageSection">
                     <div className="shortcutkeys">

@@ -71,6 +71,7 @@ export default function MonacoEditor({ settings, tab, onChange, onMount, MonacoE
           automaticLayout: true,
           glyphMargin: true,
           suggestOnTriggerCharacters: true,
+          quickSuggestionsDelay: 0,
           quickSuggestions: {
             other: true,
             comments: false,
@@ -80,6 +81,12 @@ export default function MonacoEditor({ settings, tab, onChange, onMount, MonacoE
           acceptSuggestionOnEnter: 'on',
           acceptSuggestionOnCommitCharacter: true,
           tabCompletion: 'on',
+          linkedEditing: true,
+          autoClosingBrackets: 'always',
+          autoClosingQuotes: 'always',
+          autoClosingDelete: 'always',
+          autoClosingComments: 'always',
+          autoSurround: 'languageDefined',
           wordBasedSuggestions: 'allDocuments',
         }}
       />
