@@ -28,12 +28,13 @@ import LivePreview from './components/LivePreview/LivePreview.jsx';
 import shortcutManager, { formatBindingLabel, normalizeBindingString } from './components/ShortcutManager.js';
 import defaultSettings from './components/Settings/defaultSettings.js';
 import workspace from './core/workspace.js';
-import { beginOAuth, disconnectProvider, fetchAuthSession, pullSyncedState, pushSyncedState, updateSyncPreferences } from './core/accountApi.js';
+import { beginOAuth, disconnectProvider, fetchAuthSession, openDesktopOAuthUrl, pollDesktopOAuth, pullSyncedState, pushSyncedState, updateSyncPreferences } from './core/accountApi.js';
 import { getEffectiveBinding, KEYBINDING_COMMANDS } from './core/keybindings.js';
 import { fetchRunnerLanguages, formatLocalRunResult, formatRunResult, resolveRunnerLanguage, runCode, runCodeLocally } from './core/codeRunner.js';
 
 const LIVE_PREVIEW_CHANNEL = 'tilder-live-preview';
 const LIVE_PREVIEW_ID = 'primary';
+const AUTO_SYNC_POLL_MS = 4000;
 const DEFAULT_AUTH_SESSION = {
   providers: {
     github: false,
@@ -137,12 +138,15 @@ function App() {
   const livePreviewWindowRef = useRef(null);
   const livePreviewChannelRef = useRef(null);
   const syncPushTimerRef = useRef(null);
+  const syncPollerRef = useRef(null);
   const applyingSyncStateRef = useRef(false);
   const authSessionReadyRef = useRef(false);
   const authPopupRef = useRef(null);
   const authPopupPollerRef = useRef(null);
   const authPopupHandledRef = useRef(false);
   const hydratedSyncUserKeyRef = useRef('');
+  const lastSyncedPayloadHashRef = useRef('');
+  const lastRemoteSyncUpdatedAtRef = useRef('');
 
   useEffect(() => {
     localStorage.setItem('editorSettings', JSON.stringify(settings));
@@ -330,6 +334,14 @@ function App() {
     return nextState;
   }
 
+  function serializeSyncState(state) {
+    try {
+      return JSON.stringify(state || {});
+    } catch {
+      return '';
+    }
+  }
+
   function applySyncedState(nextState) {
     if (!nextState || typeof nextState !== 'object') {
       return;
@@ -384,20 +396,24 @@ function App() {
   }
 
   async function hydrateSyncedState(session, options = {}) {
-    const { silent = false, force = false } = options;
+    const { silent = false, force = false, recheck = false, background = false } = options;
     const syncUserKey = getSyncUserKeyFromSession(session);
 
     if (!syncUserKey) {
       hydratedSyncUserKeyRef.current = '';
+      lastSyncedPayloadHashRef.current = '';
+      lastRemoteSyncUpdatedAtRef.current = '';
       return null;
     }
 
-    if (!force && hydratedSyncUserKeyRef.current === syncUserKey) {
+    if (!force && !recheck && hydratedSyncUserKeyRef.current === syncUserKey) {
       return null;
     }
 
     try {
-      setSyncBusy(true);
+      if (!background) {
+        setSyncBusy(true);
+      }
       const response = await pullSyncedState();
       if (response?.session) {
         setAuthSession({
@@ -410,11 +426,21 @@ function App() {
         });
       }
 
-      if (response?.state) {
+      const remoteUpdatedAt = typeof response?.updatedAt === 'string' ? response.updatedAt : '';
+      const remotePayloadHash = response?.state ? serializeSyncState(response.state) : '';
+      const shouldApplyState =
+        Boolean(response?.state) &&
+        (force || remoteUpdatedAt !== lastRemoteSyncUpdatedAtRef.current || remotePayloadHash !== lastSyncedPayloadHashRef.current);
+
+      if (shouldApplyState) {
         applySyncedState(response.state);
       }
 
       hydratedSyncUserKeyRef.current = syncUserKey;
+      lastRemoteSyncUpdatedAtRef.current = remoteUpdatedAt;
+      if (remotePayloadHash) {
+        lastSyncedPayloadHashRef.current = remotePayloadHash;
+      }
 
       if (!silent) {
         pushNotification(response?.state ? 'Settings sync pulled from cloud.' : 'No synced settings found yet.');
@@ -427,7 +453,9 @@ function App() {
       }
       throw error;
     } finally {
-      setSyncBusy(false);
+      if (!background) {
+        setSyncBusy(false);
+      }
     }
   }
 
@@ -451,7 +479,7 @@ function App() {
     return activeAccountProvider ? authSession?.accounts?.[activeAccountProvider] || null : null;
   }, [activeAccountProvider, authSession]);
 
-  function handleStartOAuth(provider) {
+  async function handleStartOAuth(provider) {
     if (authServiceStatus === 'error') {
       pushNotification(
         authServiceMessage || 'The Tilder auth server is not reachable. Start the backend server on port 3210.',
@@ -468,18 +496,85 @@ function App() {
       return;
     }
 
-    const popup = beginOAuth(provider);
-    if (!popup) {
-      pushNotification(`Allow popups to connect ${provider === 'github' ? 'GitHub' : 'Microsoft'}.`, 'warning');
+    let oauthFlow = null;
+
+    try {
+      oauthFlow = await beginOAuth(provider);
+    } catch (error) {
+      pushNotification(error instanceof Error ? error.message : 'Could not start sign-in.', 'warning');
       return;
     }
 
     authPopupHandledRef.current = false;
     if (authPopupPollerRef.current) {
       window.clearInterval(authPopupPollerRef.current);
+      authPopupPollerRef.current = null;
     }
 
-    authPopupRef.current = popup;
+    if (oauthFlow?.mode === 'desktop' && oauthFlow.desktopSessionId) {
+      try {
+        if (!oauthFlow.authorizeUrl) {
+          throw new Error('Could not prepare the GitHub OAuth URL.');
+        }
+
+        await openDesktopOAuthUrl(oauthFlow.authorizeUrl);
+      } catch (error) {
+        pushNotification(error instanceof Error ? error.message : 'Could not open your browser for sign-in.', 'warning');
+        return;
+      }
+
+      setAuthBusyProvider(provider);
+      pushNotification(
+        `Browser opened for ${provider === 'github' ? 'GitHub' : 'Microsoft'} sign-in. Finish the OAuth flow there, then return to Tilder.`,
+        'info'
+      );
+
+      authPopupPollerRef.current = window.setInterval(async () => {
+        try {
+          const result = await pollDesktopOAuth(oauthFlow.desktopSessionId);
+
+          if (result?.status === 'pending') {
+            return;
+          }
+
+          window.clearInterval(authPopupPollerRef.current);
+          authPopupPollerRef.current = null;
+          authPopupHandledRef.current = true;
+
+          if (result?.status === 'complete' && result.session) {
+            const session = {
+              ...DEFAULT_AUTH_SESSION,
+              ...result.session,
+              syncPreferences: {
+                ...DEFAULT_AUTH_SESSION.syncPreferences,
+                ...(result.session?.syncPreferences || {}),
+              },
+            };
+
+            setAuthSession(session);
+            await hydrateSyncedState(session, { silent: true, force: true }).catch(() => null);
+            pushNotification(`${provider === 'github' ? 'GitHub' : 'Microsoft'} connected.`);
+          } else if (result?.status === 'error') {
+            pushNotification(result.message || 'Authentication failed.', 'warning');
+          }
+        } catch (error) {
+          window.clearInterval(authPopupPollerRef.current);
+          authPopupPollerRef.current = null;
+          pushNotification(error instanceof Error ? error.message : 'Could not complete sign-in.', 'warning');
+        } finally {
+          setAuthBusyProvider(null);
+        }
+      }, 1200);
+
+      return;
+    }
+
+    if (!oauthFlow?.window) {
+      pushNotification(`Allow popups to connect ${provider === 'github' ? 'GitHub' : 'Microsoft'}.`, 'warning');
+      return;
+    }
+
+    authPopupRef.current = oauthFlow.window;
     setAuthBusyProvider(provider);
 
     authPopupPollerRef.current = window.setInterval(async () => {
@@ -575,20 +670,48 @@ function App() {
       return;
     }
 
+    const { silent = false, background = false, force = false } = options;
+
     try {
-      setSyncBusy(true);
       const payload = buildSyncState();
-      await pushSyncedState({ state: payload });
-      await refreshAuthSession();
-      if (!options.silent) {
+      const payloadHash = serializeSyncState(payload);
+
+      if (!force && payloadHash && payloadHash === lastSyncedPayloadHashRef.current) {
+        return;
+      }
+
+      if (!background) {
+        setSyncBusy(true);
+      }
+
+      const response = await pushSyncedState({ state: payload });
+      if (response?.session) {
+        setAuthSession({
+          ...DEFAULT_AUTH_SESSION,
+          ...response.session,
+          syncPreferences: {
+            ...DEFAULT_AUTH_SESSION.syncPreferences,
+            ...(response.session?.syncPreferences || {}),
+          },
+        });
+      }
+
+      lastSyncedPayloadHashRef.current = payloadHash;
+      if (typeof response?.updatedAt === 'string') {
+        lastRemoteSyncUpdatedAtRef.current = response.updatedAt;
+      }
+
+      if (!silent) {
         pushNotification('Settings sync pushed to cloud.');
       }
     } catch (error) {
-      if (!options.silent) {
+      if (!silent) {
         pushNotification(error instanceof Error ? error.message : 'Unable to push synced state.', 'warning');
       }
     } finally {
-      setSyncBusy(false);
+      if (!background) {
+        setSyncBusy(false);
+      }
     }
   }
 
@@ -1008,7 +1131,7 @@ function App() {
 
     clearTimeout(syncPushTimerRef.current);
     syncPushTimerRef.current = setTimeout(() => {
-      handlePushSync({ silent: true });
+      handlePushSync({ silent: true, background: true });
     }, 1400);
 
     return () => clearTimeout(syncPushTimerRef.current);
@@ -1039,6 +1162,35 @@ function App() {
 
     hydrateSyncedState(authSession, { silent: true, force: true }).catch(() => null);
   }, [authSession]);
+
+  useEffect(() => {
+    clearInterval(syncPollerRef.current);
+
+    if (!authSessionReadyRef.current || !authSession.syncProvider || applyingSyncStateRef.current) {
+      return undefined;
+    }
+
+    const syncUserKey = getSyncUserKeyFromSession(authSession);
+    if (!syncUserKey) {
+      return undefined;
+    }
+
+    if (!authSession.syncPreferences?.syncSettings && !authSession.syncPreferences?.syncLayout && !authSession.syncPreferences?.syncShortcuts) {
+      return undefined;
+    }
+
+    syncPollerRef.current = window.setInterval(() => {
+      hydrateSyncedState(authSession, { silent: true, recheck: true, background: true }).catch(() => null);
+    }, AUTO_SYNC_POLL_MS);
+
+    return () => clearInterval(syncPollerRef.current);
+  }, [
+    authSession,
+    authSession.syncPreferences?.syncLayout,
+    authSession.syncPreferences?.syncSettings,
+    authSession.syncPreferences?.syncShortcuts,
+    authSession.syncProvider,
+  ]);
 
   function syncEditorStatus(editorInstance = editorRef.current) {
     const editor = editorInstance;

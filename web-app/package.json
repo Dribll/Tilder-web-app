@@ -9,15 +9,20 @@
     "dev:api": "node server.js",
     "start": "node server.js",
     "terminal-bridge": "node terminal-bridge.js",
+    "build:desktop": "npm run build && node scripts/prepare-tauri-runtime.mjs",
     "sync:snippets": "node scripts/sync-friendly-snippets.mjs",
     "sync:completions": "node scripts/sync-monaco-completions.mjs",
     "build": "vite build",
     "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
     "@fortawesome/fontawesome-svg-core": "^6.4.2",
     "@fortawesome/free-brands-svg-icons": "^6.4.2",
     "@fortawesome/free-regular-svg-icons": "^6.4.2",
@@ -43,6 +48,7 @@
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
     "@types/react": "^18.0.37",
     "@types/react-dom": "^18.0.11",
     "@vitejs/plugin-react-swc": "^3.0.0",

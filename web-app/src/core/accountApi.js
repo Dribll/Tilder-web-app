@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 async function parseJson(response) {
   const raw = await response.text();
   let data = {};
@@ -24,18 +26,59 @@ async function parseJson(response) {
   return data;
 }
 
-export function beginOAuth(provider) {
+function shouldUseRedirectOAuth() {
+  return typeof window !== 'undefined' && Boolean(window.chrome?.webview);
+}
+
+export async function openDesktopOAuthUrl(authorizeUrl) {
+  return invoke('open_external_url', { url: authorizeUrl });
+}
+
+export async function beginOAuth(provider) {
   const width = 620;
   const height = 760;
   const left = Math.max(0, window.screenX + (window.outerWidth - width) / 2);
   const top = Math.max(0, window.screenY + (window.outerHeight - height) / 2);
-  const url = `/api/auth/${provider}/start?client_origin=${encodeURIComponent(window.location.origin)}`;
+  const flow = shouldUseRedirectOAuth() ? 'desktop' : 'popup';
 
-  return window.open(
+  if (flow === 'desktop') {
+    const response = await fetch('/api/auth/desktop/start', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        provider,
+        client_origin: window.location.origin,
+      }),
+    });
+    const data = await parseJson(response);
+
+    return {
+      mode: 'desktop',
+      desktopSessionId: data.desktopSessionId,
+      authorizeUrl: data.authorizeUrl || '',
+    };
+  }
+
+  const url = `/api/auth/${provider}/start?client_origin=${encodeURIComponent(window.location.origin)}&flow=${encodeURIComponent(flow)}`;
+
+  const popup = window.open(
     url,
     `tilder-oauth-${provider}`,
     `popup=yes,width=${width},height=${height},left=${left},top=${top}`
   );
+
+  return popup ? { mode: 'popup', window: popup } : null;
+}
+
+export async function pollDesktopOAuth(desktopSessionId) {
+  const response = await fetch(`/api/auth/desktop/status?desktopSessionId=${encodeURIComponent(desktopSessionId)}`, {
+    credentials: 'include',
+  });
+
+  return parseJson(response);
 }
 
 export async function fetchAuthSession() {

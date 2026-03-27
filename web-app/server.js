@@ -13,8 +13,9 @@ import { runLocalFile, runWorkspaceFile, syncWorkspaceMirror } from './localRunn
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const distPath = path.join(__dirname, 'dist');
-const dataDir = path.join(__dirname, 'data');
+const appRootDir = process.env.TILDER_APP_ROOT || __dirname;
+const distPath = process.env.TILDER_DIST_DIR || path.join(appRootDir, 'dist');
+const dataDir = process.env.TILDER_DATA_DIR || path.join(appRootDir, 'data');
 const syncStorePath = path.join(dataDir, 'sync-store.json');
 
 const app = express();
@@ -31,9 +32,11 @@ const io = new Server(server, {
 const port = Number(process.env.PORT || 3210);
 const shell = os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash';
 const shellArgs = os.platform() === 'win32' ? ['-NoLogo'] : [];
-const shellCwd = process.env.TILDER_TERMINAL_CWD || __dirname;
+const shellCwd = process.env.TILDER_TERMINAL_CWD || appRootDir;
 const runnerBaseUrl = process.env.TILDER_RUNNER_URL || 'https://ce.judge0.com';
 const gitBinary = process.env.GIT_BINARY || 'git';
+const githubSyncRepoName = process.env.TILDER_GITHUB_SYNC_REPO || 'tilder-settings-sync';
+const githubSyncFilePath = process.env.TILDER_GITHUB_SYNC_FILE || 'settings-sync.json';
 const publicBaseUrl = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
 const sessionCookieName = 'tilder.sid';
 const sessionTtlMs = 1000 * 60 * 60 * 24 * 30;
@@ -44,6 +47,7 @@ const defaultSyncPreferences = {
 };
 const sessions = new Map();
 const oauthStates = new Map();
+const desktopAuthSessions = new Map();
 
 const providerConfig = {
   github: {
@@ -184,14 +188,140 @@ async function writeSyncStore(store) {
   await fs.writeFile(syncStorePath, JSON.stringify(store, null, 2), 'utf8');
 }
 
-function getSyncUserKey(session) {
+function getSyncProviderAccount(session) {
   const provider = session.syncProvider;
   const account = provider ? session.accounts?.[provider] : null;
+  return provider && account ? { provider, account } : null;
+}
+
+function getSyncUserKey(session) {
+  const providerAccount = getSyncProviderAccount(session);
+  const provider = providerAccount?.provider;
+  const account = providerAccount?.account;
   if (!provider || !account?.id) {
     return null;
   }
 
   return `${provider}:${account.id}`;
+}
+
+function getGitHubSyncHeaders(account) {
+  return {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${account.accessToken}`,
+    'User-Agent': 'Tilder',
+    'Content-Type': 'application/json',
+  };
+}
+
+async function ensureGitHubSyncRepo(account) {
+  const repoUrl = `https://api.github.com/repos/${account.username}/${githubSyncRepoName}`;
+  const response = await fetch(repoUrl, {
+    headers: getGitHubSyncHeaders(account),
+  });
+
+  if (response.ok) {
+    return;
+  }
+
+  if (response.status !== 404) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || 'Unable to verify GitHub sync repository.');
+  }
+
+  const createResponse = await fetch('https://api.github.com/user/repos', {
+    method: 'POST',
+    headers: getGitHubSyncHeaders(account),
+    body: JSON.stringify({
+      name: githubSyncRepoName,
+      description: 'Tilder settings sync storage',
+      homepage: 'https://tildercode.onrender.com',
+      private: true,
+      auto_init: true,
+    }),
+  });
+
+  if (!createResponse.ok) {
+    const error = await createResponse.json().catch(() => ({}));
+    throw new Error(error.message || 'Unable to create GitHub sync repository.');
+  }
+}
+
+async function pullGitHubSyncState(account) {
+  const fileUrl = `https://api.github.com/repos/${account.username}/${githubSyncRepoName}/contents/${githubSyncFilePath}`;
+  const response = await fetch(fileUrl, {
+    headers: getGitHubSyncHeaders(account),
+  });
+
+  if (response.status === 404) {
+    return { state: null, updatedAt: null };
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || 'Unable to load synced settings from GitHub.');
+  }
+
+  const payload = await response.json();
+  const content = Buffer.from(String(payload.content || '').replace(/\n/g, ''), 'base64').toString('utf8');
+  const parsed = JSON.parse(content || '{}');
+
+  return {
+    state: parsed?.state || null,
+    updatedAt: parsed?.updatedAt || null,
+  };
+}
+
+async function pushGitHubSyncState(account, state) {
+  await ensureGitHubSyncRepo(account);
+
+  const fileUrl = `https://api.github.com/repos/${account.username}/${githubSyncRepoName}/contents/${githubSyncFilePath}`;
+  const existingResponse = await fetch(fileUrl, {
+    headers: getGitHubSyncHeaders(account),
+  });
+
+  let sha = '';
+  if (existingResponse.ok) {
+    const existing = await existingResponse.json();
+    sha = existing.sha || '';
+  } else if (existingResponse.status !== 404) {
+    const error = await existingResponse.json().catch(() => ({}));
+    throw new Error(error.message || 'Unable to inspect GitHub sync file.');
+  }
+
+  const updatedAt = new Date().toISOString();
+  const body = {
+    message: `Update Tilder settings sync (${updatedAt})`,
+    content: Buffer.from(
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt,
+          state: state || null,
+        },
+        null,
+        2
+      ),
+      'utf8'
+    ).toString('base64'),
+  };
+
+  if (sha) {
+    body.sha = sha;
+  }
+
+  const updateResponse = await fetch(fileUrl, {
+    method: 'PUT',
+    headers: getGitHubSyncHeaders(account),
+    body: JSON.stringify(body),
+  });
+
+  if (!updateResponse.ok) {
+    const error = await updateResponse.json().catch(() => ({}));
+    throw new Error(error.message || 'Unable to write synced settings to GitHub.');
+  }
+
+  return { updatedAt };
 }
 
 function createPopupResponse({ baseUrl, success, provider, message }) {
@@ -252,6 +382,81 @@ function createPopupResponse({ baseUrl, success, provider, message }) {
     </script>
   </body>
 </html>`;
+}
+
+function createRedirectResponse({ baseUrl, success, provider, message }) {
+  const redirectUrl = new URL(baseUrl);
+  redirectUrl.searchParams.set('tilder_oauth_status', success ? 'success' : 'error');
+  redirectUrl.searchParams.set('tilder_oauth_provider', provider);
+  if (message) {
+    redirectUrl.searchParams.set('tilder_oauth_message', message);
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Tilder OAuth</title>
+    <meta http-equiv="refresh" content="0;url=${redirectUrl.toString()}" />
+  </head>
+  <body>
+    <script>
+      window.location.replace(${JSON.stringify(redirectUrl.toString())});
+    </script>
+  </body>
+</html>`;
+}
+
+function createOAuthCompletionResponse({ baseUrl, success, provider, message, flow }) {
+  if (flow === 'desktop') {
+    return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Tilder OAuth</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Segoe UI, Arial, sans-serif;
+        background: #11131b;
+        color: #edf0ff;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+      }
+      .tilder-oauth-card {
+        width: min(420px, calc(100vw - 40px));
+        background: #1b1f2c;
+        border: 1px solid #363d6b;
+        border-radius: 16px;
+        padding: 28px;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+      }
+      .tilder-oauth-title {
+        font-size: 22px;
+        font-weight: 700;
+        margin-bottom: 10px;
+      }
+      .tilder-oauth-copy {
+        color: #b9c1ef;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="tilder-oauth-card">
+      <div class="tilder-oauth-title">${success ? 'Connected' : 'Connection failed'}</div>
+      <div class="tilder-oauth-copy">${message}</div>
+    </div>
+  </body>
+</html>`;
+  }
+
+  if (flow === 'redirect') {
+    return createRedirectResponse({ baseUrl, success, provider, message });
+  }
+
+  return createPopupResponse({ baseUrl, success, provider, message });
 }
 
 function ensureProviderReady(provider) {
@@ -516,6 +721,7 @@ app.get('/api/auth/:provider/start', (request, response) => {
       provider,
       sessionId: request.session.id,
       clientOrigin: String(request.query.client_origin || '').trim(),
+      flow: String(request.query.flow || '').trim() === 'redirect' ? 'redirect' : 'popup',
       createdAt: Date.now(),
     });
 
@@ -542,6 +748,112 @@ app.get('/api/auth/:provider/start', (request, response) => {
   }
 });
 
+app.post('/api/auth/desktop/start', (request, response) => {
+  try {
+    const provider = String(request.body?.provider || '').trim();
+    const config = ensureProviderReady(provider);
+    const state = crypto.randomUUID();
+    const desktopSessionId = crypto.randomUUID();
+    const redirectUri = buildRedirectUri(request, provider);
+
+    desktopAuthSessions.set(desktopSessionId, {
+      id: desktopSessionId,
+      provider,
+      status: 'pending',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      message: '',
+      account: null,
+    });
+
+    oauthStates.set(state, {
+      provider,
+      sessionId: null,
+      clientOrigin: String(request.body?.client_origin || request.query.client_origin || '').trim() || buildBaseUrl(request),
+      desktopSessionId,
+      flow: 'desktop',
+      createdAt: Date.now(),
+    });
+
+    let authorizeUrl = '';
+
+    if (provider === 'github') {
+      const url = new URL(config.authorizeUrl);
+      url.searchParams.set('client_id', config.clientId);
+      url.searchParams.set('redirect_uri', redirectUri);
+      url.searchParams.set('scope', config.scopes.join(' '));
+      url.searchParams.set('state', state);
+      authorizeUrl = url.toString();
+    } else {
+      const url = new URL(`https://login.microsoftonline.com/${config.tenantId}/oauth2/v2.0/authorize`);
+      url.searchParams.set('client_id', config.clientId);
+      url.searchParams.set('response_type', 'code');
+      url.searchParams.set('redirect_uri', redirectUri);
+      url.searchParams.set('response_mode', 'query');
+      url.searchParams.set('scope', config.scopes.join(' '));
+      url.searchParams.set('state', state);
+      authorizeUrl = url.toString();
+    }
+
+    response.json({
+      ok: true,
+      provider,
+      desktopSessionId,
+      authorizeUrl,
+    });
+  } catch (error) {
+    response.status(400).json({ message: error instanceof Error ? error.message : 'Unable to start desktop sign-in.' });
+  }
+});
+
+app.get('/api/auth/desktop/status', (request, response) => {
+  const desktopSessionId = String(request.query.desktopSessionId || '').trim();
+  if (!desktopSessionId) {
+    response.status(400).json({ message: 'Missing desktop session id.' });
+    return;
+  }
+
+  const desktopSession = desktopAuthSessions.get(desktopSessionId);
+  if (!desktopSession) {
+    response.status(404).json({ message: 'Desktop sign-in session expired.' });
+    return;
+  }
+
+  desktopSession.updatedAt = Date.now();
+
+  if (desktopSession.status === 'pending') {
+    response.json({ status: 'pending' });
+    return;
+  }
+
+  if (desktopSession.status === 'error') {
+    desktopAuthSessions.delete(desktopSessionId);
+    response.json({
+      status: 'error',
+      message: desktopSession.message || 'Authentication failed.',
+    });
+    return;
+  }
+
+  if (desktopSession.status === 'authorized' && desktopSession.account) {
+    request.session.accounts[desktopSession.provider] = desktopSession.account;
+    if (!request.session.syncProvider) {
+      request.session.syncProvider = desktopSession.provider;
+    }
+
+    const session = sanitizeSession(request.session);
+    desktopAuthSessions.delete(desktopSessionId);
+    response.json({
+      status: 'complete',
+      provider: desktopSession.provider,
+      session,
+    });
+    return;
+  }
+
+  response.json({ status: 'pending' });
+});
+
 app.get('/api/auth/:provider/callback', async (request, response) => {
   const provider = request.params.provider;
   const state = String(request.query.state || '');
@@ -551,26 +863,47 @@ app.get('/api/auth/:provider/callback', async (request, response) => {
   const oauthRequest = oauthStates.get(state);
   oauthStates.delete(state);
   const clientOrigin = oauthRequest?.clientOrigin || buildBaseUrl(request);
+  const flow = oauthRequest?.flow === 'desktop' ? 'desktop' : oauthRequest?.flow === 'redirect' ? 'redirect' : 'popup';
+  const desktopSession = oauthRequest?.desktopSessionId ? desktopAuthSessions.get(oauthRequest.desktopSessionId) : null;
 
   if (error) {
+    if (flow === 'desktop' && desktopSession) {
+      desktopSession.status = 'error';
+      desktopSession.updatedAt = Date.now();
+      desktopSession.message = `The ${provider} sign-in flow was cancelled or rejected.`;
+    }
+
     response.status(400).send(
-      createPopupResponse({
+      createOAuthCompletionResponse({
         baseUrl: clientOrigin,
         success: false,
         provider,
         message: `The ${provider} sign-in flow was cancelled or rejected.`,
+        flow,
       })
     );
     return;
   }
 
-  if (!oauthRequest || oauthRequest.provider !== provider || oauthRequest.sessionId !== request.session.id) {
+  const hasMatchingSession =
+    flow === 'desktop'
+      ? Boolean(desktopSession)
+      : Boolean(oauthRequest && oauthRequest.sessionId === request.session.id);
+
+  if (!oauthRequest || oauthRequest.provider !== provider || !hasMatchingSession) {
+    if (flow === 'desktop' && desktopSession) {
+      desktopSession.status = 'error';
+      desktopSession.updatedAt = Date.now();
+      desktopSession.message = 'This sign-in session is no longer valid. Please try again from Tilder.';
+    }
+
     response.status(400).send(
-      createPopupResponse({
+      createOAuthCompletionResponse({
         baseUrl: clientOrigin,
         success: false,
         provider,
         message: 'This sign-in session is no longer valid. Please try again from Tilder.',
+        flow,
       })
     );
     return;
@@ -583,26 +916,41 @@ app.get('/api/auth/:provider/callback', async (request, response) => {
         ? await exchangeGitHubCode({ code, redirectUri })
         : await exchangeMicrosoftCode({ code, redirectUri });
 
-    request.session.accounts[provider] = account;
-    if (!request.session.syncProvider) {
-      request.session.syncProvider = provider;
+    if (flow === 'desktop' && desktopSession) {
+      desktopSession.status = 'authorized';
+      desktopSession.updatedAt = Date.now();
+      desktopSession.account = account;
+      desktopSession.message = `${providerConfig[provider].label} connected. Return to Tilder.`;
+    } else {
+      request.session.accounts[provider] = account;
+      if (!request.session.syncProvider) {
+        request.session.syncProvider = provider;
+      }
     }
 
     response.send(
-      createPopupResponse({
+      createOAuthCompletionResponse({
         baseUrl: clientOrigin,
         success: true,
         provider,
-        message: `${providerConfig[provider].label} is now connected. You can close this window.`,
+        message: `${providerConfig[provider].label} is now connected. You can return to Tilder.`,
+        flow,
       })
     );
   } catch (caughtError) {
+    if (flow === 'desktop' && desktopSession) {
+      desktopSession.status = 'error';
+      desktopSession.updatedAt = Date.now();
+      desktopSession.message = caughtError instanceof Error ? caughtError.message : 'Sign-in failed.';
+    }
+
     response.status(500).send(
-      createPopupResponse({
+      createOAuthCompletionResponse({
         baseUrl: clientOrigin,
         success: false,
         provider,
         message: caughtError instanceof Error ? caughtError.message : 'Sign-in failed.',
+        flow,
       })
     );
   }
@@ -639,12 +987,28 @@ app.get('/api/sync/pull', async (request, response) => {
     return;
   }
 
-  const store = await readSyncStore();
-  response.json({
-    session: sanitizeSession(request.session),
-    state: store.users?.[userKey]?.state || null,
-    updatedAt: store.users?.[userKey]?.updatedAt || null,
-  });
+  try {
+    const providerAccount = getSyncProviderAccount(request.session);
+
+    if (providerAccount?.provider === 'github' && providerAccount.account?.accessToken && providerAccount.account?.username) {
+      const result = await pullGitHubSyncState(providerAccount.account);
+      response.json({
+        session: sanitizeSession(request.session),
+        state: result.state,
+        updatedAt: result.updatedAt,
+      });
+      return;
+    }
+
+    const store = await readSyncStore();
+    response.json({
+      session: sanitizeSession(request.session),
+      state: store.users?.[userKey]?.state || null,
+      updatedAt: store.users?.[userKey]?.updatedAt || null,
+    });
+  } catch (error) {
+    response.status(500).json({ message: error instanceof Error ? error.message : 'Unable to pull synced state.' });
+  }
 });
 
 app.post('/api/sync/push', async (request, response) => {
@@ -654,21 +1018,37 @@ app.post('/api/sync/push', async (request, response) => {
     return;
   }
 
-  const store = await readSyncStore();
-  const provider = request.session.syncProvider;
-  store.users[userKey] = {
-    provider,
-    profile: sanitizeAccount(request.session.accounts?.[provider]),
-    updatedAt: new Date().toISOString(),
-    state: request.body?.state || null,
-  };
-  await writeSyncStore(store);
+  try {
+    const providerAccount = getSyncProviderAccount(request.session);
 
-  response.json({
-    ok: true,
-    session: sanitizeSession(request.session),
-    updatedAt: store.users[userKey].updatedAt,
-  });
+    if (providerAccount?.provider === 'github' && providerAccount.account?.accessToken && providerAccount.account?.username) {
+      const result = await pushGitHubSyncState(providerAccount.account, request.body?.state || null);
+      response.json({
+        ok: true,
+        session: sanitizeSession(request.session),
+        updatedAt: result.updatedAt,
+      });
+      return;
+    }
+
+    const store = await readSyncStore();
+    const provider = request.session.syncProvider;
+    store.users[userKey] = {
+      provider,
+      profile: sanitizeAccount(request.session.accounts?.[provider]),
+      updatedAt: new Date().toISOString(),
+      state: request.body?.state || null,
+    };
+    await writeSyncStore(store);
+
+    response.json({
+      ok: true,
+      session: sanitizeSession(request.session),
+      updatedAt: store.users[userKey].updatedAt,
+    });
+  } catch (error) {
+    response.status(500).json({ message: error instanceof Error ? error.message : 'Unable to push synced state.' });
+  }
 });
 
 app.get('/api/github/repos', async (request, response) => {
