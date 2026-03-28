@@ -36,6 +36,8 @@ import { fetchRunnerLanguages, formatLocalRunResult, formatRunResult, resolveRun
 const LIVE_PREVIEW_CHANNEL = 'tilder-live-preview';
 const LIVE_PREVIEW_ID = 'primary';
 const AUTO_SYNC_POLL_MS = 4000;
+const AUTH_WAIT_NOTIFICATION_KEY = 'auth-waiting';
+const AUTH_WAIT_NOTIFICATION_DELAY_MS = 1200;
 const DEFAULT_AUTH_SESSION = {
   providers: {
     github: false,
@@ -181,6 +183,7 @@ function App() {
 
   useEffect(() => {
     let active = true;
+    const clearWakeNotification = armAuthWakeNotification();
 
     fetchAuthSession()
       .then((session) => {
@@ -199,6 +202,7 @@ function App() {
         setAuthServiceStatus('ready');
         setAuthServiceMessage('');
         authSessionReadyRef.current = true;
+        clearWakeNotification();
       })
       .catch((error) => {
         if (!active) {
@@ -208,10 +212,12 @@ function App() {
         setAuthServiceStatus('error');
         setAuthServiceMessage(error instanceof Error ? error.message : 'Could not reach the Tilder auth server.');
         authSessionReadyRef.current = true;
+        clearWakeNotification();
       });
 
     return () => {
       active = false;
+      clearWakeNotification();
     };
   }, []);
 
@@ -307,6 +313,54 @@ function App() {
     ].slice(0, 20));
   }
 
+  function upsertNotification(key, message, tone = 'info') {
+    setNotifications((current) => {
+      const existing = current.find((entry) => entry.key === key);
+      const nextEntry = {
+        id: existing?.id || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        key,
+        message,
+        tone,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        read: false,
+      };
+
+      if (!existing) {
+        return [nextEntry, ...current].slice(0, 20);
+      }
+
+      return current.map((entry) => (entry.key === key ? nextEntry : entry));
+    });
+  }
+
+  function removeNotificationByKey(key) {
+    setNotifications((current) => current.filter((entry) => entry.key !== key));
+  }
+
+  function armAuthWakeNotification() {
+    if (typeof window === 'undefined') {
+      return () => {};
+    }
+
+    const apiOrigin = getApiOrigin();
+    if (!apiOrigin || apiOrigin === window.location.origin) {
+      return () => {};
+    }
+
+    const timer = window.setTimeout(() => {
+      upsertNotification(
+        AUTH_WAIT_NOTIFICATION_KEY,
+        'Settings sync waiting for the account service to wake up...',
+        'info'
+      );
+    }, AUTH_WAIT_NOTIFICATION_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+      removeNotificationByKey(AUTH_WAIT_NOTIFICATION_KEY);
+    };
+  }
+
   function markNotificationsRead() {
     setNotifications((current) => current.map((entry) => ({ ...entry, read: true })));
   }
@@ -381,18 +435,24 @@ function App() {
   }
 
   async function refreshAuthSession() {
-    const session = await fetchAuthSession();
-    setAuthSession({
-      ...DEFAULT_AUTH_SESSION,
-      ...session,
-      syncPreferences: {
-        ...DEFAULT_AUTH_SESSION.syncPreferences,
-        ...(session?.syncPreferences || {}),
-      },
-    });
-    setAuthServiceStatus('ready');
-    setAuthServiceMessage('');
-    return session;
+    const clearWakeNotification = armAuthWakeNotification();
+
+    try {
+      const session = await fetchAuthSession();
+      setAuthSession({
+        ...DEFAULT_AUTH_SESSION,
+        ...session,
+        syncPreferences: {
+          ...DEFAULT_AUTH_SESSION.syncPreferences,
+          ...(session?.syncPreferences || {}),
+        },
+      });
+      setAuthServiceStatus('ready');
+      setAuthServiceMessage('');
+      return session;
+    } finally {
+      clearWakeNotification();
+    }
   }
 
   function getSyncUserKeyFromSession(session) {
