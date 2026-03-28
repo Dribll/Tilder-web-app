@@ -2,7 +2,8 @@
 ## Tilder web app is a lightweight code editor that helps us to code efficiently & swiftly in a 360° world. It has powerful efficient features and tools that deliver you with your powerful code. It supports 100+ languages & uses Monaco-editor. 
 
 
-![Tilder cover page](https://github.com/user-attachments/assets/4a55d70c-8aa0-482f-9088-75d167e133fa)
+<img width="1709" height="827" alt="image" src="https://github.com/user-attachments/assets/52f15aae-9c65-4542-859b-c492bd818429" />
+
 
 ![Static Badge](https://img.shields.io/badge/render-live-blue)
 
@@ -20,7 +21,7 @@
 
 1. Open the application in your web browser: [Tilder Web Code Editor](https://tildercode.onrender.com/)
 2. Create a new file or open an existing one
-3. Start coding!
+3. Code like a Pro!
 
 ---
 
