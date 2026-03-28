@@ -540,6 +540,68 @@ const workspace = {
     await this.verifyPermission(handle, true);
     const file = await handle.getFile();
     const content = await file.text();
+
+    if (!this.rootHandle) {
+      const root = this.ensureDraftRoot();
+      let node = await this.findNodeByHandle(handle);
+
+      if (!node) {
+        const finalName = this.getUniqueChildName(root, handle.name);
+        const path = joinPath(root.path, finalName);
+        node = {
+          id: path,
+          path,
+          name: finalName,
+          type: 'file',
+          handle,
+          parentPath: root.path,
+          isDraft: true,
+          content,
+        };
+        root.children.push(node);
+        root.open = true;
+        this.sortNodeChildren(root);
+      } else {
+        node.handle = handle;
+        node.content = content;
+      }
+
+      const existingDraftTab = this.tabs.find((tab) => tab.path === node.path);
+      if (existingDraftTab) {
+        existingDraftTab.name = node.name;
+        existingDraftTab.handle = handle;
+        existingDraftTab.content = content;
+        existingDraftTab.savedContent = content;
+        existingDraftTab.language = this.getLanguage(node.name);
+        existingDraftTab.dirty = false;
+        existingDraftTab.external = false;
+        existingDraftTab.isUntitled = false;
+        existingDraftTab.isDraft = true;
+        this.activeTabId = existingDraftTab.id;
+        this.selectedNodePath = node.path;
+        return existingDraftTab;
+      }
+
+      const tab = {
+        id: node.path,
+        path: node.path,
+        external: false,
+        isUntitled: false,
+        isDraft: true,
+        name: node.name,
+        handle,
+        content,
+        savedContent: content,
+        language: this.getLanguage(node.name),
+        dirty: false,
+      };
+
+      this.tabs.push(tab);
+      this.activeTabId = tab.id;
+      this.selectedNodePath = node.path;
+      return tab;
+    }
+
     const id = `external:${handle.name}`;
     const existing = this.tabs.find((tab) => tab.id === id);
 
@@ -550,6 +612,7 @@ const workspace = {
       existing.isUntitled = false;
       existing.isDraft = false;
       this.activeTabId = existing.id;
+      this.selectedNodePath = null;
       return existing;
     }
 

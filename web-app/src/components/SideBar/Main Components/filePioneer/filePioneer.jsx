@@ -375,7 +375,7 @@ export default function FilePioneer({
   const [draftName, setDraftName] = useState('');
   const root = workspace.getRootNode();
   const selectedPath = workspace.selectedNodePath;
-  const explorerTabs = workspace.tabs.filter((tab) => !tab.external || tab.isUntitled);
+  const explorerTabs = workspace.tabs;
 
   const title = useMemo(() => (root ? workspace.rootName || root.name : 'No folder opened'), [root, workspace.rootName]);
 
