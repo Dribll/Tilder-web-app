@@ -129,6 +129,9 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
+!.env.*.example
 .venv
 env/
 venv/
@@ -169,3 +172,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Tauri desktop build output
+web-app/src-tauri/binaries/
+web-app/src-tauri/resources/
+web-app/src-tauri/target/
