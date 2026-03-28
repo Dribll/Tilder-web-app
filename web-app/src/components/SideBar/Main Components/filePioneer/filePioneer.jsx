@@ -340,11 +340,13 @@ function TreeNode({
 }
 
 function OpenEditorItem({ tab, activeTabId, setActiveTab, closeTab }) {
+  const badge = tab.isUntitled ? 'new' : tab.dirty ? '*' : '';
+
   return (
     <div className={`explorer-open-editor ${tab.id === activeTabId ? 'active' : ''}`}>
       <button type="button" className="explorer-open-editor-main" onClick={() => setActiveTab(tab.id)}>
         <span className="explorer-open-editor-name">{tab.name}</span>
-        <span className="explorer-open-editor-badge">{tab.isUntitled || tab.isDraft ? 'new' : tab.dirty ? '*' : ''}</span>
+        <span className="explorer-open-editor-badge">{badge}</span>
       </button>
       <button
         type="button"

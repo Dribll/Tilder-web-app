@@ -661,7 +661,7 @@ const workspace = {
       language: this.getLanguage(node.name),
       dirty: false,
       external: false,
-      isUntitled: !!node.isDraft,
+      isUntitled: !!node.isDraft && !node.handle,
       isDraft: !!node.isDraft,
     };
 

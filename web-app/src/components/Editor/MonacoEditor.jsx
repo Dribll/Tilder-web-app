@@ -2,6 +2,114 @@ import React from 'react';
 import { Editor } from '@monaco-editor/react';
 import { registerSnippetProviders } from './snippetProviders.js';
 
+const VOID_HTML_TAGS = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
+]);
+
+let linkedHtmlTagProviderRegistered = false;
+
+function offsetToRange(model, startOffset, endOffset) {
+  const start = model.getPositionAt(startOffset);
+  const end = model.getPositionAt(endOffset);
+  return {
+    startLineNumber: start.lineNumber,
+    startColumn: start.column,
+    endLineNumber: end.lineNumber,
+    endColumn: end.column,
+  };
+}
+
+function buildHtmlTagPairs(text) {
+  const tagPattern = /<\/?([A-Za-z][\w:-]*)\b[^>]*?>/g;
+  const stack = [];
+  const pairs = [];
+  let match;
+
+  while ((match = tagPattern.exec(text))) {
+    const [tagText, rawName] = match;
+    const name = rawName.toLowerCase();
+    const isClosing = tagText.startsWith('</');
+    const isSelfClosing = /\/\s*>$/.test(tagText);
+    const nameStartOffset = match.index + (isClosing ? 2 : 1);
+    const nameEndOffset = nameStartOffset + rawName.length;
+
+    if (!isClosing && !isSelfClosing && !VOID_HTML_TAGS.has(name)) {
+      stack.push({
+        name,
+        range: { startOffset: nameStartOffset, endOffset: nameEndOffset },
+      });
+      continue;
+    }
+
+    if (isClosing) {
+      for (let index = stack.length - 1; index >= 0; index -= 1) {
+        if (stack[index].name !== name) {
+          continue;
+        }
+
+        const [openTag] = stack.splice(index, 1);
+        pairs.push({
+          openRange: openTag.range,
+          closeRange: { startOffset: nameStartOffset, endOffset: nameEndOffset },
+        });
+        break;
+      }
+    }
+  }
+
+  return pairs;
+}
+
+function registerHtmlLinkedTagProvider(monaco) {
+  if (linkedHtmlTagProviderRegistered) {
+    return;
+  }
+
+  monaco.languages.registerLinkedEditingRangeProvider('html', {
+    provideLinkedEditingRanges(model, position) {
+      const text = model.getValue();
+      const offset = model.getOffsetAt(position);
+      const pairs = buildHtmlTagPairs(text);
+
+      for (const pair of pairs) {
+        const isInsideOpen =
+          offset >= pair.openRange.startOffset && offset <= pair.openRange.endOffset;
+        const isInsideClose =
+          offset >= pair.closeRange.startOffset && offset <= pair.closeRange.endOffset;
+
+        if (!isInsideOpen && !isInsideClose) {
+          continue;
+        }
+
+        return {
+          ranges: [
+            offsetToRange(model, pair.openRange.startOffset, pair.openRange.endOffset),
+            offsetToRange(model, pair.closeRange.startOffset, pair.closeRange.endOffset),
+          ],
+          wordPattern: /[A-Za-z][\w:-]*/,
+        };
+      }
+
+      return null;
+    },
+  });
+
+  linkedHtmlTagProviderRegistered = true;
+}
+
 export default function MonacoEditor({ settings, tab, onChange, onMount, MonacoEditorDisplay, monacoEditorStyle, onOpenCommandPalette }) {
   if (!settings || !tab) {
     return null;
@@ -9,6 +117,7 @@ export default function MonacoEditor({ settings, tab, onChange, onMount, MonacoE
 
   function handleMount(editor, monaco) {
     registerSnippetProviders(monaco);
+    registerHtmlLinkedTagProvider(monaco);
 
     monaco.editor.defineTheme('tilder-night', {
       base: 'vs-dark',
