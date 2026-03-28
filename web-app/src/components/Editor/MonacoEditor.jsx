@@ -33,13 +33,13 @@ function offsetToRange(model, startOffset, endOffset) {
 }
 
 function buildHtmlTagPairs(text) {
-  const tagPattern = /<\/?([A-Za-z][\w:-]*)\b[^>]*?>/g;
+  const tagPattern = /<\/?([A-Za-z][\w:-]*)?[^>]*?>/g;
   const stack = [];
   const pairs = [];
   let match;
 
   while ((match = tagPattern.exec(text))) {
-    const [tagText, rawName] = match;
+    const [tagText, rawName = ''] = match;
     const name = rawName.toLowerCase();
     const isClosing = tagText.startsWith('</');
     const isSelfClosing = /\/\s*>$/.test(tagText);
@@ -56,7 +56,12 @@ function buildHtmlTagPairs(text) {
 
     if (isClosing) {
       for (let index = stack.length - 1; index >= 0; index -= 1) {
-        if (stack[index].name !== name) {
+        const canLink =
+          stack[index].name === name ||
+          stack[index].name.length === 0 ||
+          name.length === 0;
+
+        if (!canLink) {
           continue;
         }
 
@@ -99,7 +104,7 @@ function registerHtmlLinkedTagProvider(monaco) {
             offsetToRange(model, pair.openRange.startOffset, pair.openRange.endOffset),
             offsetToRange(model, pair.closeRange.startOffset, pair.closeRange.endOffset),
           ],
-          wordPattern: /[A-Za-z][\w:-]*/,
+          wordPattern: /[\w:-]*/,
         };
       }
 
@@ -161,6 +166,12 @@ export default function MonacoEditor({ settings, tab, onChange, onMount, MonacoE
       editor.addCommand(monaco.KeyCode.F1, () => onOpenCommandPalette());
     }
 
+    editor.addCommand(
+      monaco.KeyCode.Enter,
+      () => editor.trigger('keyboard', 'acceptSelectedSuggestion', {}),
+      'suggestWidgetVisible'
+    );
+
     onMount?.(editor, monaco);
   }
 
@@ -186,6 +197,11 @@ export default function MonacoEditor({ settings, tab, onChange, onMount, MonacoE
             comments: false,
             strings: true,
           },
+          suggest: {
+            selectionMode: 'always',
+            snippetsPreventQuickSuggestions: false,
+          },
+          suggestSelection: 'first',
           snippetSuggestions: 'top',
           acceptSuggestionOnEnter: 'on',
           acceptSuggestionOnCommitCharacter: true,
