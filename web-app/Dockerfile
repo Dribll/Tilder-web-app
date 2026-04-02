@@ -16,7 +16,7 @@ RUN apt-get update \
         php-cli \
         python3 \
         python3-pip \
-        rust-analyzer \
+        rust-web-analyzer \
         unzip \
     && rm -rf /var/lib/apt/lists/*
 
