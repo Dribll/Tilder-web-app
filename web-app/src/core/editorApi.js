@@ -67,12 +67,15 @@ export function describeLanguageIntelliSense(capabilities, languageId) {
       available: false,
       providerType: 'lsp',
       serverLabel: capability.serverLabel || '',
-      statusLabel: capability.runtimeMode === 'desktop-local' ? 'IntelliSense: install server' : 'IntelliSense: backend missing',
+      statusLabel:
+        capability.runtimeMode === 'desktop-local'
+          ? 'IntelliSense: install server'
+          : 'IntelliSense: syntax + backend',
       detail:
         capability.detail ||
         (capability.runtimeMode === 'desktop-local'
-          ? `Install ${capability.serverLabel || capability.command || 'the language server'} for full IntelliSense.`
-          : `Install ${capability.serverLabel || capability.command || 'the language server'} on the Tilder backend for full web IntelliSense.`),
+          ? `Syntax support is active. Install ${capability.serverLabel || capability.command || 'the language server'} for full IntelliSense.`
+          : `Syntax support is active on the web. Install ${capability.serverLabel || capability.command || 'the language server'} on the Tilder backend for full hosted IntelliSense.`),
     };
   }
 
@@ -80,8 +83,8 @@ export function describeLanguageIntelliSense(capabilities, languageId) {
     return {
       available: true,
       providerType: 'basic',
-      statusLabel: 'IntelliSense: syntax only',
-      detail: capability.detail || 'Syntax highlighting and basic editor features are available for this language.',
+      statusLabel: 'IntelliSense: syntax support',
+      detail: capability.detail || 'Syntax highlighting, language mode detection, brackets, and basic editor behaviors are available for this language.',
     };
   }
 
@@ -97,7 +100,7 @@ export function describeLanguageIntelliSense(capabilities, languageId) {
   return {
     available: false,
     providerType: 'none',
-    statusLabel: 'IntelliSense: unavailable',
-    detail: 'No native or local language server provider is available for this language.',
+    statusLabel: 'IntelliSense: text mode',
+    detail: 'This file is open in plain text mode. Choose a language mode to enable syntax support.',
   };
 }

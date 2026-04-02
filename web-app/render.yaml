@@ -1,14 +1,12 @@
 services:
   - type: web
     name: tildercode
-    runtime: node
+    runtime: docker
     plan: free
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     autoDeploy: true
     envVars:
-      - key: NODE_VERSION
-        value: 22
       - key: PUBLIC_BASE_URL
         value: https://tilder-web-app.onrender.com
       - key: MICROSOFT_TENANT_ID

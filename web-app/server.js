@@ -361,8 +361,8 @@ async function buildEditorCapabilities(runtimeMode) {
               ? `${serverLabel} is available on this machine.`
               : `${serverLabel} is available on the Tilder backend.`
             : localRuntime
-              ? `${serverLabel} is not installed on this machine.`
-              : `${serverLabel} is not installed on the Tilder backend.`,
+              ? `Syntax support is active. ${serverLabel} is not installed on this machine yet.`
+              : `Syntax support is active. ${serverLabel} is not installed on the Tilder backend yet.`,
       };
       continue;
     }

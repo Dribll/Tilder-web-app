@@ -140,6 +140,34 @@ const workspace = {
       return 'plaintext';
     }
 
+    if (normalizedName === '.env' || normalizedName.startsWith('.env.')) {
+      return 'ini';
+    }
+
+    if (normalizedName === 'dockerfile' || normalizedName.startsWith('dockerfile.')) {
+      return 'dockerfile';
+    }
+
+    if (normalizedName === 'makefile' || normalizedName === 'gnumakefile') {
+      return 'makefile';
+    }
+
+    if (normalizedName === 'cmakelists.txt') {
+      return 'cmake';
+    }
+
+    if (normalizedName === 'jenkinsfile') {
+      return 'groovy';
+    }
+
+    if (normalizedName === 'gemfile') {
+      return 'ruby';
+    }
+
+    if (normalizedName === 'procfile') {
+      return 'shell';
+    }
+
     if (exactFileLanguageMap.has(normalizedName)) {
       return exactFileLanguageMap.get(normalizedName) || 'plaintext';
     }
