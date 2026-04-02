@@ -7,6 +7,10 @@ function toFriendlyError(error, fallback) {
     return 'Tilder API server is not reachable. Start or restart the Node server on port 3210.';
   }
 
+  if (message.includes('PayloadTooLargeError') || message.includes('workspace mirror payload is too large')) {
+    return 'This workspace is too large to mirror as-is for Source Control. Tilder now skips generated folders like node_modules, dist, build, and target. Refresh Source Control and try again.';
+  }
+
   return message || fallback;
 }
 
@@ -25,7 +29,7 @@ export default function Git({ ariaExpandedisplaygit, workspace, workspaceVersion
   }, [authSession?.accounts?.github, authSession?.accounts?.microsoft]);
 
   async function buildPayload() {
-    return (await workspace.getSyncPayload()) || workspace.getStructureSnapshot();
+    return (await workspace.getSyncPayload({ includeGeneratedDirectories: false })) || workspace.getStructureSnapshot();
   }
 
   async function refreshScm() {

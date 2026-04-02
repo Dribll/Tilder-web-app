@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
@@ -10,6 +11,8 @@ import { Server } from 'socket.io';
 import * as pty from 'node-pty';
 import simpleGit from 'simple-git';
 import { runLocalFile, runWorkspaceFile, syncWorkspaceMirror } from './localRunner.js';
+import { createLspBroker } from './server/lsp/broker.js';
+import { getAllEditorLanguages, getLspAdapter, NATIVE_EDITOR_LANGUAGES } from './server/lsp/registry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,6 +48,7 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+const lspNamespace = io.of('/lsp');
 
 const port = Number(process.env.PORT || 3210);
 const shell = os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash';
@@ -72,6 +76,8 @@ const defaultSyncPreferences = {
 const sessions = new Map();
 const oauthStates = new Map();
 const desktopAuthSessions = new Map();
+const remoteWorkspaceSessions = new Map();
+const remoteWorkspaceSessionTtlMs = 1000 * 60 * 60;
 
 const providerConfig = {
   github: {
@@ -91,6 +97,9 @@ const providerConfig = {
   },
 };
 
+const commandResolutionCache = new Map();
+const commandResolutionTtlMs = 30_000;
+
 app.use(express.json({ limit: '4mb' }));
 app.use((request, response, next) => {
   applyCorsHeaders(request, response);
@@ -103,9 +112,8 @@ app.use((request, response, next) => {
   next();
 });
 
-function parseCookies(request) {
-  const raw = request.headers.cookie || '';
-  return raw.split(';').reduce((bucket, entry) => {
+function parseCookieHeader(raw = '') {
+  return String(raw || '').split(';').reduce((bucket, entry) => {
     const [key, ...valueParts] = entry.trim().split('=');
     if (!key) {
       return bucket;
@@ -114,6 +122,10 @@ function parseCookies(request) {
     bucket[key] = decodeURIComponent(valueParts.join('=') || '');
     return bucket;
   }, {});
+}
+
+function parseCookies(request) {
+  return parseCookieHeader(request.headers.cookie || '');
 }
 
 function normalizeOrigin(value) {
@@ -157,6 +169,308 @@ function applyCorsHeaders(request, response) {
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   response.setHeader('Vary', 'Origin');
+}
+
+function isLoopbackHostname(hostname) {
+  return ['127.0.0.1', '::1', 'localhost'].includes(String(hostname || '').toLowerCase());
+}
+
+function getRuntimeModeFromValue(value) {
+  try {
+    const candidate = String(value || '').includes('://') ? String(value) : `http://${String(value || '').trim()}`;
+    const url = new URL(candidate);
+    return isLoopbackHostname(url.hostname) ? 'desktop-local' : 'hosted-web';
+  } catch {
+    return 'hosted-web';
+  }
+}
+
+function getRuntimeMode(request) {
+  const protocol = request.get('x-forwarded-proto') || request.protocol || 'http';
+  return getRuntimeModeFromValue(`${protocol}://${request.get('host')}`);
+}
+
+function normalizeWorkspaceRoot(workspaceRoot) {
+  const candidate = String(workspaceRoot || '').trim();
+  if (!candidate) {
+    return shellCwd;
+  }
+
+  return path.isAbsolute(candidate) ? candidate : shellCwd;
+}
+
+function pruneRemoteWorkspaceSessions() {
+  const now = Date.now();
+
+  for (const [sessionId, session] of remoteWorkspaceSessions.entries()) {
+    if (now - Number(session.updatedAt || 0) <= remoteWorkspaceSessionTtlMs) {
+      continue;
+    }
+
+    remoteWorkspaceSessions.delete(sessionId);
+  }
+}
+
+async function upsertRemoteWorkspaceSession(ownerSessionId, payload, existingSessionId = '') {
+  pruneRemoteWorkspaceSessions();
+
+  const normalizedPayload = payload && typeof payload === 'object' ? payload : {};
+  const snapshot = {
+    rootName: String(normalizedPayload.rootName || 'workspace'),
+    entries: Array.isArray(normalizedPayload.entries) ? normalizedPayload.entries : [],
+  };
+
+  let sessionId = String(existingSessionId || '').trim();
+  let existingSession = sessionId ? remoteWorkspaceSessions.get(sessionId) : null;
+
+  if (existingSession && existingSession.ownerSessionId !== ownerSessionId) {
+    throw new Error('That remote workspace session does not belong to the current user.');
+  }
+
+  if (!existingSession) {
+    sessionId = crypto.randomUUID();
+  }
+
+  const mirror = await syncWorkspaceMirror({
+    rootName: `remote-${sessionId}-${snapshot.rootName}`,
+    entries: snapshot.entries,
+    preserveGit: true,
+  });
+
+  const nextSession = {
+    id: sessionId,
+    ownerSessionId,
+    rootName: snapshot.rootName,
+    entriesCount: snapshot.entries.length,
+    workspaceRoot: mirror.cwd,
+    updatedAt: Date.now(),
+  };
+
+  remoteWorkspaceSessions.set(sessionId, nextSession);
+  return nextSession;
+}
+
+function getRemoteWorkspaceSession(ownerSessionId, sessionId) {
+  pruneRemoteWorkspaceSessions();
+
+  const candidateId = String(sessionId || '').trim();
+  if (!candidateId) {
+    return null;
+  }
+
+  const session = remoteWorkspaceSessions.get(candidateId);
+  if (!session || session.ownerSessionId !== ownerSessionId) {
+    return null;
+  }
+
+  session.updatedAt = Date.now();
+  return session;
+}
+
+function resolveCommandCheckTool() {
+  return os.platform() === 'win32'
+    ? { command: 'where.exe', args: [] }
+    : { command: 'which', args: [] };
+}
+
+function resolveCommandOnPath(commandName) {
+  const cacheKey = String(commandName || '').trim();
+  if (!cacheKey) {
+    return Promise.resolve('');
+  }
+
+  const cached = commandResolutionCache.get(cacheKey);
+  if (cached && Date.now() - cached.checkedAt < commandResolutionTtlMs) {
+    return Promise.resolve(cached.result);
+  }
+
+  const checker = resolveCommandCheckTool();
+
+  return new Promise((resolve) => {
+    const child = spawn(checker.command, [...checker.args, cacheKey], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
+    });
+
+    let stdout = '';
+    const timeout = setTimeout(() => {
+      child.kill();
+    }, 3000);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.on('error', () => {
+      clearTimeout(timeout);
+      commandResolutionCache.set(cacheKey, { checkedAt: Date.now(), result: '' });
+      resolve('');
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timeout);
+      const result = code === 0 ? cacheKey : '';
+      commandResolutionCache.set(cacheKey, { checkedAt: Date.now(), result });
+      resolve(result);
+    });
+  });
+}
+
+async function resolveInstalledCommand(commands = []) {
+  for (const commandName of commands) {
+    const resolved = await resolveCommandOnPath(commandName);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return '';
+}
+
+async function buildEditorCapabilities(runtimeMode) {
+  const localRuntime = runtimeMode === 'desktop-local';
+  const nativeLanguageIds = new Set(NATIVE_EDITOR_LANGUAGES.map((language) => language.id));
+  const languages = {};
+
+  for (const language of getAllEditorLanguages()) {
+    if (nativeLanguageIds.has(language.id)) {
+      languages[language.id] = {
+        languageId: language.id,
+        providerType: 'native',
+        available: true,
+        runtimeMode,
+        detail: language.detail || 'Native Monaco language service.',
+      };
+      continue;
+    }
+
+    if (language.supportLevel === 'lsp') {
+      const adapter = getLspAdapter(language.id);
+      const installedCommand = await resolveInstalledCommand(adapter?.commands || []);
+      const serverLabel = adapter?.serverLabel || language.serverLabel || language.id;
+      languages[language.id] = {
+        languageId: language.id,
+        providerType: 'lsp',
+        available: Boolean(installedCommand),
+        runtimeMode,
+        command: installedCommand || adapter?.commands?.[0] || '',
+        serverLabel,
+        detail:
+          installedCommand
+            ? localRuntime
+              ? `${serverLabel} is available on this machine.`
+              : `${serverLabel} is available on the Tilder backend.`
+            : localRuntime
+              ? `${serverLabel} is not installed on this machine.`
+              : `${serverLabel} is not installed on the Tilder backend.`,
+      };
+      continue;
+    }
+
+    languages[language.id] = {
+      languageId: language.id,
+      providerType: 'basic',
+      available: true,
+      runtimeMode,
+      detail: language.detail || 'Syntax highlighting and basic editor features.',
+    };
+  }
+
+  return {
+    runtimeMode,
+    lspBridge: {
+      path: '/lsp',
+      available: true,
+      transport: 'socket.io',
+    },
+    languages,
+  };
+}
+
+function parseLspMessages(buffer, onMessage) {
+  let offset = 0;
+
+  while (offset < buffer.length) {
+    const headerEnd = buffer.indexOf('\r\n\r\n', offset, 'utf8');
+    if (headerEnd === -1) {
+      break;
+    }
+
+    const headerText = buffer.slice(offset, headerEnd).toString('utf8');
+    const contentLengthMatch = headerText.match(/Content-Length:\s*(\d+)/i);
+    if (!contentLengthMatch) {
+      offset = headerEnd + 4;
+      continue;
+    }
+
+    const contentLength = Number(contentLengthMatch[1]);
+    const bodyStart = headerEnd + 4;
+    const bodyEnd = bodyStart + contentLength;
+
+    if (buffer.length < bodyEnd) {
+      break;
+    }
+
+    const payload = buffer.slice(bodyStart, bodyEnd).toString('utf8');
+    try {
+      onMessage(JSON.parse(payload));
+    } catch {
+      // Ignore malformed language server payloads.
+    }
+
+    offset = bodyEnd;
+  }
+
+  return buffer.slice(offset);
+}
+
+function encodeLspMessage(payload) {
+  const body = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  return `Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n${body}`;
+}
+
+function emitLspStatus(session, payload) {
+  lspNamespace.to(session.room).emit('lsp:status', payload);
+}
+
+function spawnLspProcess(command, args, workspaceRoot) {
+  return spawn(command, args, {
+    cwd: workspaceRoot,
+    env: process.env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+}
+
+const lspBroker = createLspBroker({
+  normalizeWorkspaceRoot,
+  resolveInstalledCommand,
+  emitStatus: emitLspStatus,
+  namespace: lspNamespace,
+  spawnProcess: spawnLspProcess,
+  parseMessages: parseLspMessages,
+  encodeMessage: encodeLspMessage,
+});
+
+function resolveSessionFromSocket(socket) {
+  const cookies = parseCookieHeader(socket.request?.headers?.cookie || '');
+  let sessionId = cookies[sessionCookieName];
+  let session = sessionId ? sessions.get(sessionId) : null;
+
+  if (!session) {
+    session = decodeSessionPayload(cookies[sessionPayloadCookieName]);
+    if (session) {
+      sessionId = session.id;
+      sessions.set(sessionId, session);
+    }
+  }
+
+  if (!session) {
+    return null;
+  }
+
+  session.updatedAt = Date.now();
+  return session;
 }
 
 function buildBaseUrl(request) {
@@ -923,6 +1237,54 @@ app.use((request, response, next) => {
   next();
 });
 
+app.get('/api/editor/capabilities', async (request, response) => {
+  try {
+    response.json(await buildEditorCapabilities(getRuntimeMode(request)));
+  } catch (error) {
+    response.status(500).json({
+      message: error instanceof Error ? error.message : 'Unable to load editor capabilities.',
+    });
+  }
+});
+
+app.post('/api/editor/workspace-session', async (request, response) => {
+  try {
+    const nextSession = await upsertRemoteWorkspaceSession(
+      request.session.id,
+      request.body || {},
+      request.body?.sessionId || ''
+    );
+
+    response.json({
+      sessionId: nextSession.id,
+      workspaceRoot: nextSession.workspaceRoot,
+      rootName: nextSession.rootName,
+      entriesCount: nextSession.entriesCount,
+      updatedAt: nextSession.updatedAt,
+    });
+  } catch (error) {
+    response.status(400).json({
+      message: error instanceof Error ? error.message : 'Unable to create remote workspace session.',
+    });
+  }
+});
+
+app.get('/api/editor/workspace-session/:sessionId', (request, response) => {
+  const session = getRemoteWorkspaceSession(request.session.id, request.params.sessionId);
+  if (!session) {
+    response.status(404).json({ message: 'Remote workspace session not found.' });
+    return;
+  }
+
+  response.json({
+    sessionId: session.id,
+    workspaceRoot: session.workspaceRoot,
+    rootName: session.rootName,
+    entriesCount: session.entriesCount,
+    updatedAt: session.updatedAt,
+  });
+});
+
 app.get('/api/auth/session', (request, response) => {
   response.json(sanitizeSession(request.session));
 });
@@ -1320,6 +1682,62 @@ app.get('/api/github/repos', async (request, response) => {
   }
 });
 
+app.post('/api/github/repos', async (request, response) => {
+  const account = request.session.accounts?.github;
+  if (!account?.accessToken) {
+    response.status(400).json({ message: 'Connect GitHub first.' });
+    return;
+  }
+
+  const name = String(request.body?.name || '').trim();
+  const description = String(request.body?.description || '').trim();
+  const isPrivate = request.body?.private !== false;
+
+  if (!name) {
+    response.status(400).json({ message: 'Enter a repository name.' });
+    return;
+  }
+
+  try {
+    const upstream = await fetch('https://api.github.com/user/repos', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${account.accessToken}`,
+        'User-Agent': 'Tilder',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name,
+        description,
+        private: isPrivate,
+        auto_init: true,
+      }),
+    });
+    const repo = await upstream.json().catch(() => ({}));
+
+    if (!upstream.ok) {
+      response.status(upstream.status).json({ message: repo.message || 'Unable to create GitHub repository.' });
+      return;
+    }
+
+    response.json({
+      repository: {
+        id: repo.id,
+        name: repo.name,
+        fullName: repo.full_name,
+        private: repo.private,
+        url: repo.html_url,
+        defaultBranch: repo.default_branch,
+        updatedAt: repo.updated_at,
+        description: repo.description || '',
+      },
+    });
+  } catch {
+    response.status(500).json({ message: 'Failed to create GitHub repository.' });
+  }
+});
+
 app.post('/api/scm/status', async (request, response) => {
   try {
     const status = await collectScmStatus(request.body || {}, request.session);
@@ -1491,6 +1909,59 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     ptyProcess.kill();
   });
+});
+
+lspNamespace.on('connection', async (socket) => {
+  const runtimeMode = getRuntimeModeFromValue(socket.handshake.headers.host || '');
+  const languageId = String(socket.handshake.query.languageId || '').trim();
+  const requestedWorkspaceRoot = normalizeWorkspaceRoot(socket.handshake.query.workspaceRoot || shellCwd);
+  const remoteWorkspaceSessionId = String(socket.handshake.query.sessionId || '').trim();
+  const ownerSession = resolveSessionFromSocket(socket);
+  const adapter = languageId ? getLspAdapter(languageId) : null;
+
+  if (!languageId || !adapter) {
+    socket.emit('lsp:status', {
+      status: 'unsupported',
+      languageId,
+      message: 'No local language server is configured for this language.',
+    });
+    socket.disconnect(true);
+    return;
+  }
+
+  let session = null;
+
+  try {
+    const remoteWorkspaceSession = remoteWorkspaceSessionId
+      ? getRemoteWorkspaceSession(ownerSession?.id || '', remoteWorkspaceSessionId)
+      : null;
+    const workspaceRoot =
+      remoteWorkspaceSession?.workspaceRoot || (runtimeMode === 'desktop-local' ? requestedWorkspaceRoot : '');
+
+    if (!workspaceRoot) {
+      socket.emit('lsp:status', {
+        status: 'unavailable',
+        languageId,
+        message:
+          runtimeMode === 'desktop-local'
+            ? 'Create and sync a workspace mirror before using IntelliSense for this file.'
+            : 'Create and sync a remote workspace session before using hosted IntelliSense.',
+      });
+      socket.disconnect(true);
+      return;
+    }
+
+    session = await lspBroker.ensureSession(languageId, workspaceRoot, adapter);
+    lspBroker.attachSocket(socket, session);
+  } catch (error) {
+    socket.emit('lsp:status', {
+      status: 'error',
+      languageId,
+      message: error instanceof Error ? error.message : 'Unable to start the local language server.',
+    });
+    socket.disconnect(true);
+    return;
+  }
 });
 
 app.use(express.static(distPath));

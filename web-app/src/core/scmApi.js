@@ -11,8 +11,12 @@ async function parseJson(response) {
   }
 
   if (!response.ok) {
+    const normalizedMessage = typeof data.message === 'string' ? data.message.trim() : '';
     const message =
-      data.message ||
+      (response.status === 413 || normalizedMessage.includes('PayloadTooLargeError')
+        ? 'The workspace mirror payload is too large. Tilder should skip generated folders like node_modules, dist, and build for Source Control.'
+        : null) ||
+      normalizedMessage ||
       (response.status === 404
         ? 'This Tilder deployment is missing the Node API routes. Deploy it on Render as a Web Service with `npm run build` and `npm start`, not as a static site.'
         : null) ||

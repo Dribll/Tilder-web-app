@@ -1,3 +1,5 @@
+import { EDITOR_LANGUAGE_REGISTRY } from '../../shared/editor/languageRegistry.js';
+
 function sortNodes(nodes) {
   return [...nodes].sort((left, right) => {
     if (left.type !== right.type) {
@@ -7,6 +9,44 @@ function sortNodes(nodes) {
     return left.name.localeCompare(right.name);
   });
 }
+
+const exactFileLanguageMap = new Map();
+const extensionLanguageMap = new Map();
+const GENERATED_SYNC_SEGMENTS = new Set([
+  '.git',
+  '.next',
+  '.nuxt',
+  '.parcel-cache',
+  '.svelte-kit',
+  '.turbo',
+  '.vercel',
+  '.vite',
+  '__pycache__',
+  'bin',
+  'build',
+  'coverage',
+  'dist',
+  'node_modules',
+  'out',
+  'target',
+  'tmp',
+]);
+
+EDITOR_LANGUAGE_REGISTRY.forEach((language) => {
+  (language.extensions || []).forEach((entry) => {
+    const normalized = String(entry || '').toLowerCase();
+    if (!normalized) {
+      return;
+    }
+
+    if (normalized.startsWith('.')) {
+      extensionLanguageMap.set(normalized, language.id);
+      return;
+    }
+
+    exactFileLanguageMap.set(normalized, language.id);
+  });
+});
 
 function joinPath(parentPath, name) {
   if (!parentPath || parentPath === 'root') {
@@ -61,6 +101,28 @@ function isBinaryFileName(name = '') {
   ].includes(extension);
 }
 
+function shouldSkipSyncPath(nodePath = '', options = {}) {
+  const normalized = String(nodePath || '')
+    .replace(/^root\/?/, '')
+    .replace(/^\/+/, '')
+    .trim();
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (normalized === '.git' || normalized.startsWith('.git/') || normalized.includes('/.git/')) {
+    return true;
+  }
+
+  if (options.includeGeneratedDirectories) {
+    return false;
+  }
+
+  const segments = normalized.split('/').filter(Boolean);
+  return segments.some((segment) => GENERATED_SYNC_SEGMENTS.has(segment));
+}
+
 const workspace = {
   adapter: typeof window !== 'undefined' && window.__TAURI__ ? 'tauri' : 'browser',
   rootHandle: null,
@@ -73,51 +135,24 @@ const workspace = {
   untitledCounter: 1,
 
   getLanguage(name = '') {
-    const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
-    const map = {
-      c: 'c',
-      cc: 'cpp',
-      conf: 'ini',
-      cpp: 'cpp',
-      cs: 'csharp',
-      css: 'css',
-      env: 'shell',
-      go: 'go',
-      gradle: 'java',
-      h: 'cpp',
-      html: 'html',
-      htm: 'html',
-      ini: 'ini',
-      java: 'java',
-      js: 'javascript',
-      mjs: 'javascript',
-      cjs: 'javascript',
-      json: 'json',
-      jsx: 'javascript',
-      less: 'css',
-      mf: 'ini',
-      md: 'markdown',
-      properties: 'ini',
-      php: 'php',
-      py: 'python',
-      pyw: 'python',
-      rb: 'ruby',
-      rs: 'rust',
-      sass: 'scss',
-      scss: 'scss',
-      sh: 'shell',
-      sql: 'sql',
-      ts: 'typescript',
-      tsx: 'typescript',
-      txt: 'plaintext',
-      toml: 'ini',
-      vue: 'html',
-      xml: 'xml',
-      yml: 'yaml',
-      yaml: 'yaml',
-    };
+    const normalizedName = String(name || '').trim().toLowerCase();
+    if (!normalizedName) {
+      return 'plaintext';
+    }
 
-    return map[ext] || 'plaintext';
+    if (exactFileLanguageMap.has(normalizedName)) {
+      return exactFileLanguageMap.get(normalizedName) || 'plaintext';
+    }
+
+    const lastDotIndex = normalizedName.lastIndexOf('.');
+    if (lastDotIndex !== -1) {
+      const extension = normalizedName.slice(lastDotIndex);
+      if (extensionLanguageMap.has(extension)) {
+        return extensionLanguageMap.get(extension) || 'plaintext';
+      }
+    }
+
+    return 'plaintext';
   },
 
   hasRealWorkspace() {
@@ -178,7 +213,7 @@ const workspace = {
     };
   },
 
-  async getSyncPayload() {
+  async getSyncPayload(options = {}) {
     const root = this.getRootNode();
     if (!root) {
       return null;
@@ -188,7 +223,7 @@ const workspace = {
 
     const visit = async (node) => {
       if (node.path !== 'root') {
-        if (node.path === '.git' || node.path.startsWith('.git/') || node.path.includes('/.git/')) {
+        if (shouldSkipSyncPath(node.path, options)) {
           return;
         }
 

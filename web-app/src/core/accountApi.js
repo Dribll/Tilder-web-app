@@ -132,3 +132,15 @@ export async function fetchGitHubRepos() {
 
   return parseJson(response);
 }
+
+export async function createGitHubRepo(payload) {
+  const response = await apiFetch('/api/github/repos', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload || {}),
+  });
+
+  return parseJson(response);
+}

@@ -185,6 +185,8 @@ li {
 .SideBarmainwrper {
     display: flex;
     gap: 2px;
+    position: relative;
+    align-items: stretch;
 }
 
 .mainsect {
@@ -493,12 +495,46 @@ button.statusbar-item:hover {
 .sidebarscontent {
     padding: 9.5px;
     display: none;
-    width: 20vw;
+    width: var(--sidebar-content-width, 20vw);
+    min-width: 0;
     height: 90vh;
     background-color: var(--main-bg-color);
     color: white;
     border-top-left-radius: 6px;
     border-bottom-left-radius: 6px;
+}
+
+.sidebar-resizer {
+    position: absolute;
+    left: -6px;
+    top: 0;
+    width: 12px;
+    height: 90vh;
+    cursor: col-resize;
+    z-index: 14;
+}
+
+.sidebar-resizer::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 18px;
+    bottom: 18px;
+    width: 2px;
+    border-radius: 999px;
+    background: rgba(152, 164, 255, 0.72);
+    box-shadow: 0 0 14px rgba(145, 132, 255, 0.3);
+    opacity: 0;
+    transform: scaleY(0.65);
+    transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.sidebar-resizer:hover::before,
+.sidebar-resizer.is-active::before {
+    opacity: 1;
+    transform: scaleY(1);
+    background: rgba(168, 158, 255, 0.88);
+    box-shadow: 0 0 18px rgba(145, 132, 255, 0.38);
 }
 
 .tabswrapper {
@@ -1678,7 +1714,8 @@ select.settingsInput {
 .search-mode-row,
 .search-toggle-row,
 .search-scope-row,
-.search-history-row {
+.search-history-row,
+.search-go-row {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
@@ -1734,7 +1771,8 @@ select.settingsInput {
 
 .search-input-group,
 .search-scope-block,
-.search-history-block {
+.search-history-block,
+.search-go-block {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -1781,6 +1819,24 @@ select.settingsInput {
 .search-history-chip {
     padding: 7px 10px;
     font-size: 12px;
+}
+
+.search-go-chip {
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background:
+        linear-gradient(180deg, rgba(36, 36, 62, 0.82), rgba(19, 20, 37, 0.9));
+    color: rgba(240, 242, 255, 0.86);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    padding: 7px 10px;
+    font-size: 12px;
+}
+
+.search-go-chip:hover {
+    background:
+        linear-gradient(180deg, rgba(53, 51, 89, 0.82), rgba(27, 27, 49, 0.9));
+    border-color: rgba(148, 144, 236, 0.24);
 }
 
 .search-history-chip {
@@ -1937,7 +1993,6 @@ select.settingsInput {
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 12px 14px 0;
 }
 
 .debug-section-title {
@@ -3250,6 +3305,206 @@ nav {
     font-size: 13px;
 }
 
+.go-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 106;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 8vh;
+    background: rgba(4, 6, 12, 0.22);
+}
+
+.go-popup {
+    width: min(560px, calc(100vw - 44px));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(114, 121, 171, 0.24);
+    background:
+        radial-gradient(circle at top right, rgba(104, 111, 214, 0.08), transparent 22%),
+        linear-gradient(180deg, rgba(24, 26, 43, 0.98), rgba(13, 14, 24, 0.99));
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
+}
+
+.go-popup-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.go-popup-eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(194, 201, 255, 0.58);
+}
+
+.go-popup-title {
+    margin-top: 4px;
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.go-popup-close,
+.go-popup-chip,
+.go-popup-submit {
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background:
+        linear-gradient(180deg, rgba(36, 36, 62, 0.82), rgba(19, 20, 37, 0.9));
+    color: rgba(240, 242, 255, 0.9);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.go-popup-close {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+}
+
+.go-popup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.go-popup-chip {
+    padding: 8px 11px;
+    font-size: 12px;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.go-popup-chip:hover,
+.go-popup-close:hover,
+.go-popup-submit:hover {
+    background:
+        linear-gradient(180deg, rgba(53, 51, 89, 0.82), rgba(27, 27, 49, 0.9));
+    border-color: rgba(148, 144, 236, 0.24);
+}
+
+.go-popup-chip.active,
+.go-popup-submit {
+    background:
+        linear-gradient(180deg, rgba(91, 79, 180, 0.92), rgba(49, 40, 98, 0.96));
+}
+
+.go-popup-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.go-popup-copy,
+.go-popup-hint {
+    font-size: 13px;
+    color: rgba(226, 231, 255, 0.72);
+}
+
+.go-popup-input-row {
+    display: flex;
+    gap: 10px;
+}
+
+.go-popup-input {
+    display: block !important;
+    width: 100%;
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background:
+        linear-gradient(180deg, rgba(11, 13, 24, 0.98), rgba(8, 10, 17, 0.98));
+    color: #f3f5ff;
+    border-radius: 10px;
+    padding: 11px 12px;
+    outline: none;
+    font-size: 14px;
+}
+
+.go-popup-input:focus {
+    border-color: rgba(164, 160, 255, 0.34);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.03),
+        0 0 0 3px rgba(117, 113, 208, 0.16);
+}
+
+.go-popup-submit {
+    padding: 0 16px;
+    min-width: 72px;
+}
+
+.go-popup-results {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 260px;
+    overflow: auto;
+    padding-right: 2px;
+}
+
+.go-popup-result,
+.go-popup-empty {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid rgba(111, 110, 191, 0.14);
+    background:
+        linear-gradient(180deg, rgba(22, 23, 40, 0.94), rgba(13, 14, 24, 0.96));
+}
+
+.go-popup-result {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    text-align: left;
+    color: #f1f4ff;
+    cursor: pointer;
+}
+
+.go-popup-result:hover {
+    border-color: rgba(156, 149, 255, 0.26);
+    background:
+        linear-gradient(180deg, rgba(32, 33, 57, 0.96), rgba(17, 18, 31, 0.98));
+}
+
+.go-popup-result-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.go-popup-result-badge {
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(120, 116, 228, 0.14);
+    color: #d3cdff;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.go-popup-result-path,
+.go-popup-result-preview,
+.go-popup-empty {
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(224, 230, 255, 0.68);
+}
+
+.go-popup-result-path {
+    color: rgba(189, 196, 255, 0.82);
+}
+
+.go-popup-empty {
+    padding: 12px;
+}
+
 .account-provider-stack,
 .github-repo-list,
 .scm-commit-list,
@@ -3462,6 +3717,42 @@ nav {
     outline: none;
 }
 
+.github-input {
+    display: block !important;
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(111, 110, 191, 0.16);
+    background: rgba(8, 10, 17, 0.84);
+    color: #f3f5ff;
+    outline: none;
+}
+
+.github-input:focus {
+    border-color: rgba(168, 158, 255, 0.82);
+    box-shadow: 0 0 0 2px rgba(145, 132, 255, 0.16);
+}
+
+.github-textarea {
+    min-height: 84px;
+    resize: vertical;
+}
+
+.github-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    font-size: 13px;
+    color: rgba(205, 211, 255, 0.82);
+}
+
+.github-checkbox-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+}
+
 .scm-file-row,
 .scm-commit-row,
 .github-repo-row {
@@ -3494,6 +3785,10 @@ nav {
     background: rgba(133, 49, 67, 0.18);
     border-radius: 10px;
     padding: 10px 12px;
+    max-height: 220px;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .account-service-banner {

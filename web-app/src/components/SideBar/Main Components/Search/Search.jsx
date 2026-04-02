@@ -1,168 +1,30 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ASSET_EXTENSIONS,
+  CODE_EXTENSIONS,
+  buildMatcher,
+  collectSymbols,
+  getExtension,
+  getLinePreview,
+  getSearchPool,
+  matchesPathFilters,
+  readSearchContent,
+} from '../../../../core/searchUtils.js';
 
-const CODE_EXTENSIONS = new Set([
-  'c',
-  'cpp',
-  'cs',
-  'css',
-  'go',
-  'h',
-  'html',
-  'java',
-  'js',
-  'json',
-  'jsx',
-  'md',
-  'php',
-  'py',
-  'rb',
-  'rs',
-  'sh',
-  'sql',
-  'ts',
-  'tsx',
-  'txt',
-  'xml',
-  'yml',
-  'yaml',
-]);
-
-const ASSET_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico']);
-
-function escapeRegex(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function getExtension(name = '') {
-  return name.includes('.') ? name.split('.').pop().toLowerCase() : '';
-}
-
-function collectFileNodes(nodes, bucket = []) {
-  nodes.forEach((node) => {
-    if (node.type === 'file') {
-      bucket.push(node);
-      return;
-    }
-
-    if (node.children?.length) {
-      collectFileNodes(node.children, bucket);
-    }
-  });
-
-  return bucket;
-}
-
-function matchesPathFilters(path, includeFilter, excludeFilter) {
-  const normalizedPath = path.toLowerCase();
-  const includeTerms = includeFilter
-    .split(',')
-    .map((term) => term.trim().toLowerCase())
-    .filter(Boolean);
-  const excludeTerms = excludeFilter
-    .split(',')
-    .map((term) => term.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (includeTerms.length && !includeTerms.some((term) => normalizedPath.includes(term))) {
-    return false;
-  }
-
-  if (excludeTerms.some((term) => normalizedPath.includes(term))) {
-    return false;
-  }
-
-  return true;
-}
-
-function getSearchPool(workspace, scope) {
-  if (scope === 'open') {
-    return workspace.tabs.map((tab) => ({
-      path: tab.path,
-      name: tab.name,
-      source: 'tab',
-      tab,
-      node: workspace.findNode(tab.path),
-    }));
-  }
-
-  const root = workspace.getRootNode();
-  if (!root) {
-    return [];
-  }
-
-  return collectFileNodes(root.children || []).map((node) => ({
-    path: node.path,
-    name: node.name,
-    source: 'tree',
-    node,
-    tab: workspace.tabs.find((tab) => tab.path === node.path) || null,
-  }));
-}
-
-function buildMatcher(query, { caseSensitive, wholeWord, useRegex }) {
-  if (!query.trim()) {
-    return null;
-  }
-
-  if (useRegex) {
-    const flags = caseSensitive ? 'g' : 'gi';
-    return new RegExp(query, flags);
-  }
-
-  const escaped = escapeRegex(query.trim());
-  const source = wholeWord ? `\\b${escaped}\\b` : escaped;
-  const flags = caseSensitive ? 'g' : 'gi';
-  return new RegExp(source, flags);
-}
-
-function getLinePreview(content, index) {
-  const lineStart = content.lastIndexOf('\n', index - 1) + 1;
-  const nextBreak = content.indexOf('\n', index);
-  const lineEnd = nextBreak === -1 ? content.length : nextBreak;
-  const lineText = content.slice(lineStart, lineEnd);
-  const before = content.slice(0, index);
-  const line = before.split('\n').length;
-  const column = index - lineStart + 1;
-
-  return {
-    line,
-    column,
-    preview: lineText.trim() || '(empty line)',
-  };
-}
-
-function collectSymbols(content = '') {
-  const patterns = [
-    { type: 'function', regex: /(?:export\s+)?function\s+([A-Za-z0-9_]+)\s*\(/g },
-    { type: 'class', regex: /(?:export\s+)?class\s+([A-Za-z0-9_]+)/g },
-    { type: 'const', regex: /(?:export\s+)?const\s+([A-Za-z0-9_]+)\s*=/g },
-    { type: 'let', regex: /(?:export\s+)?let\s+([A-Za-z0-9_]+)\s*=/g },
-    { type: 'var', regex: /(?:export\s+)?var\s+([A-Za-z0-9_]+)\s*=/g },
-    { type: 'interface', regex: /(?:export\s+)?interface\s+([A-Za-z0-9_]+)/g },
-    { type: 'type', regex: /(?:export\s+)?type\s+([A-Za-z0-9_]+)/g },
-  ];
-
-  const symbols = [];
-
-  patterns.forEach(({ type, regex }) => {
-    let match = regex.exec(content);
-    while (match) {
-      const preview = getLinePreview(content, match.index);
-      symbols.push({
-        name: match[1],
-        type,
-        line: preview.line,
-        column: preview.column,
-        preview: preview.preview,
-      });
-      match = regex.exec(content);
-    }
-  });
-
-  return symbols;
-}
-
-export default function Search({ ariaExpandedisplaysearch, workspace, workspaceVersion, searchFocusNonce, openSearchResult, searchRequest }) {
+export default function Search({
+  ariaExpandedisplaysearch,
+  workspace,
+  workspaceVersion,
+  searchFocusNonce,
+  openSearchResult,
+  searchRequest,
+  onGoToLine,
+  onGoToFile,
+  onGoToSymbolInWorkspace,
+  onGoToSymbolInEditor,
+  onGoToDefinition,
+  onGoToReferences,
+}) {
   const [mode, setMode] = useState('content');
   const [query, setQuery] = useState('');
   const [includeFilter, setIncludeFilter] = useState('');
@@ -283,9 +145,7 @@ export default function Search({ ariaExpandedisplaysearch, workspace, workspaceV
           const symbolResults = [];
 
           for (const entry of pool) {
-            const content =
-              entry.tab?.content ??
-              (entry.node?.isDraft ? entry.node.content || '' : entry.node ? await workspace.readFile(entry.node) : '');
+            const content = await readSearchContent(workspace, entry);
 
             if (!content) {
               continue;
@@ -318,9 +178,7 @@ export default function Search({ ariaExpandedisplaysearch, workspace, workspaceV
         let totalMatches = 0;
 
         for (const entry of pool) {
-          const content =
-            entry.tab?.content ??
-            (entry.node?.isDraft ? entry.node.content || '' : entry.node ? await workspace.readFile(entry.node) : '');
+          const content = await readSearchContent(workspace, entry);
 
           if (!content) {
             continue;
@@ -396,6 +254,30 @@ export default function Search({ ariaExpandedisplaysearch, workspace, workspaceV
           <button type="button" className={`search-mode-btn ${mode === 'symbols' ? 'active' : ''}`} onClick={() => setMode('symbols')}>
             Symbols
           </button>
+        </div>
+
+        <div className="search-go-block">
+          <div className="search-scope-label">Go</div>
+          <div className="search-go-row">
+            <button type="button" className="search-go-chip" onClick={onGoToLine}>
+              Line
+            </button>
+            <button type="button" className="search-go-chip" onClick={onGoToFile}>
+              File
+            </button>
+            <button type="button" className="search-go-chip" onClick={onGoToSymbolInWorkspace}>
+              Workspace Symbol
+            </button>
+            <button type="button" className="search-go-chip" onClick={onGoToSymbolInEditor}>
+              Editor Symbol
+            </button>
+            <button type="button" className="search-go-chip" onClick={onGoToDefinition}>
+              Definition
+            </button>
+            <button type="button" className="search-go-chip" onClick={onGoToReferences}>
+              References
+            </button>
+          </div>
         </div>
 
         <div className="search-input-group">

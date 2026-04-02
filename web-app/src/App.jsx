@@ -30,7 +30,17 @@ import defaultSettings from './components/Settings/defaultSettings.js';
 import workspace from './core/workspace.js';
 import { getApiOrigin } from './core/apiBase.js';
 import { beginOAuth, disconnectProvider, fetchAuthSession, openDesktopOAuthUrl, pollDesktopOAuth, pullSyncedState, pushSyncedState, updateSyncPreferences } from './core/accountApi.js';
+import { describeLanguageIntelliSense, fetchEditorCapabilities } from './core/editorApi.js';
+import { upsertEditorWorkspaceSession } from './core/editorSessionApi.js';
 import { getEffectiveBinding, KEYBINDING_COMMANDS } from './core/keybindings.js';
+import { createLspBridge } from './core/lspBridge.js';
+import {
+  buildMatcher,
+  collectSymbols,
+  getSearchPool,
+  matchesPathFilters,
+  readSearchContent,
+} from './core/searchUtils.js';
 import { fetchRunnerLanguages, formatLocalRunResult, formatRunResult, resolveRunnerLanguage, runCode, runCodeLocally } from './core/codeRunner.js';
 
 const LIVE_PREVIEW_CHANNEL = 'tilder-live-preview';
@@ -86,6 +96,14 @@ function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState('');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [goOverlay, setGoOverlay] = useState({
+    open: false,
+    mode: 'line',
+    value: '',
+    results: [],
+    loading: false,
+    error: '',
+  });
   const [confirmationRequest, setConfirmationRequest] = useState(null);
   const [welcomeTabOpen, setWelcomeTabOpen] = useState(true);
   const [createFolderRequestNonce, setCreateFolderRequestNonce] = useState(0);
@@ -93,6 +111,8 @@ function App() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(220);
   const [isResizingTerminal, setIsResizingTerminal] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(380);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [editorStatus, setEditorStatus] = useState({
     lines: 1,
     line: 1,
@@ -109,6 +129,22 @@ function App() {
   const [searchRequest, setSearchRequest] = useState(null);
   const [runnerLanguages, setRunnerLanguages] = useState([]);
   const [runnerLoading, setRunnerLoading] = useState(false);
+  const [editorCapabilities, setEditorCapabilities] = useState({
+    runtimeMode: 'unknown',
+    lspBridge: {
+      path: '/lsp',
+      available: false,
+      transport: 'socket.io',
+    },
+    languages: {},
+  });
+  const [editorCapabilitiesStatus, setEditorCapabilitiesStatus] = useState('loading');
+  const [editorWorkspaceSession, setEditorWorkspaceSession] = useState(null);
+  const [lspBridgeState, setLspBridgeState] = useState({
+    status: 'idle',
+    languageId: '',
+    message: '',
+  });
   const [livePreviewOpen, setLivePreviewOpen] = useState(false);
   const [livePreviewMode, setLivePreviewMode] = useState('split');
   const [livePreviewDocument, setLivePreviewDocument] = useState('');
@@ -135,6 +171,7 @@ function App() {
   const modalOpenRef = useRef(modalOpen);
   const modalTypeRef = useRef(modalType);
   const mainCodeAreaRef = useRef(null);
+  const sideBarWrapperRef = useRef(null);
   const terminalApiRef = useRef(null);
   const confirmationResolverRef = useRef(null);
   const breakpointDecorationsRef = useRef([]);
@@ -150,6 +187,11 @@ function App() {
   const hydratedSyncUserKeyRef = useRef('');
   const lastSyncedPayloadHashRef = useRef('');
   const lastRemoteSyncUpdatedAtRef = useRef('');
+  const editorCapabilityNoticeRef = useRef('');
+  const editorWorkspaceSyncTimerRef = useRef(null);
+  const lspBridgeRef = useRef(null);
+  const [activeLspBridge, setActiveLspBridge] = useState(null);
+  const goOverlayInputRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem('editorSettings', JSON.stringify(settings));
@@ -180,6 +222,169 @@ function App() {
       setCommandPaletteOpen(false);
     }
   }, [modalOpen, modalType]);
+
+  useEffect(() => {
+    if (!goOverlay.open) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      goOverlayInputRef.current?.focus();
+      goOverlayInputRef.current?.select?.();
+    }, 0);
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') {
+        closeGoOverlay();
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [goOverlay.open]);
+
+  useEffect(() => {
+    if (!goOverlay.open || goOverlay.mode === 'line') {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const query = String(goOverlay.value || '').trim();
+      if (!query) {
+        if (!cancelled) {
+          setGoOverlay((current) => ({
+            ...current,
+            loading: false,
+            error: '',
+            results: [],
+          }));
+        }
+        return;
+      }
+
+      setGoOverlay((current) => ({
+        ...current,
+        loading: true,
+        error: '',
+      }));
+
+      try {
+        const matcher = buildMatcher(query, {
+          caseSensitive: false,
+          wholeWord: false,
+          useRegex: false,
+        });
+
+        if (!matcher) {
+          if (!cancelled) {
+            setGoOverlay((current) => ({
+              ...current,
+              loading: false,
+              error: '',
+              results: [],
+            }));
+          }
+          return;
+        }
+
+        const sourceScope = goOverlay.mode === 'editor-symbol' ? 'open' : 'workspace';
+        const pool = getSearchPool(workspace, sourceScope)
+          .filter((entry) =>
+            matchesPathFilters(entry.path, '', goOverlay.mode === 'editor-symbol' ? '' : 'node_modules, dist')
+          )
+          .filter((entry) =>
+            goOverlay.mode === 'editor-symbol'
+              ? activeTab
+                ? entry.path === activeTab.path || entry.path === activeTab.id
+                : false
+              : true
+          );
+
+        if (goOverlay.mode === 'file') {
+          const fileResults = pool
+            .filter((entry) => {
+              matcher.lastIndex = 0;
+              return matcher.test(`${entry.name} ${entry.path}`);
+            })
+            .slice(0, 12)
+            .map((entry) => ({
+              kind: 'file',
+              path: entry.path,
+              name: entry.name,
+              preview: entry.path,
+            }));
+
+          if (!cancelled) {
+            setGoOverlay((current) => ({
+              ...current,
+              loading: false,
+              error: '',
+              results: fileResults,
+            }));
+          }
+          return;
+        }
+
+        const symbolResults = [];
+
+        for (const entry of pool) {
+          const content = await readSearchContent(workspace, entry);
+          if (!content) {
+            continue;
+          }
+
+          const matches = collectSymbols(content)
+            .filter((symbol) => {
+              matcher.lastIndex = 0;
+              return matcher.test(`${symbol.name} ${symbol.type}`);
+            })
+            .slice(0, 8)
+            .map((symbol) => ({
+              kind: 'symbol',
+              path: entry.path,
+              name: symbol.name,
+              symbolType: symbol.type,
+              line: symbol.line,
+              column: symbol.column,
+              preview: symbol.preview,
+            }));
+
+          symbolResults.push(...matches);
+          if (symbolResults.length >= 20) {
+            break;
+          }
+        }
+
+        if (!cancelled) {
+          setGoOverlay((current) => ({
+            ...current,
+            loading: false,
+            error: '',
+            results: symbolResults.slice(0, 20),
+          }));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setGoOverlay((current) => ({
+            ...current,
+            loading: false,
+            error: error instanceof Error ? error.message : 'Quick navigation failed.',
+            results: [],
+          }));
+        }
+      }
+    }, 140);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [goOverlay.mode, goOverlay.open, goOverlay.value, version, workspace.activeTabId]);
 
   useEffect(() => {
     let active = true;
@@ -220,6 +425,31 @@ function App() {
       clearWakeNotification();
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    fetchEditorCapabilities()
+      .then((capabilities) => {
+        if (!active) {
+          return;
+        }
+
+        setEditorCapabilities(capabilities);
+        setEditorCapabilitiesStatus('ready');
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+
+        setEditorCapabilitiesStatus('error');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [workspace.getActiveTab()?.language]);
 
   useEffect(() => {
     function clearOAuthPopupMonitor() {
@@ -298,6 +528,28 @@ function App() {
 
   function closeCommandPalette() {
     setCommandPaletteOpen(false);
+  }
+
+  function openGoOverlay(mode = 'line', value = '') {
+    setGoOverlay({
+      open: true,
+      mode,
+      value,
+      results: [],
+      loading: false,
+      error: '',
+    });
+  }
+
+  function closeGoOverlay() {
+    setGoOverlay({
+      open: false,
+      mode: 'line',
+      value: '',
+      results: [],
+      loading: false,
+      error: '',
+    });
   }
 
   function pushNotification(message, tone = 'info') {
@@ -387,6 +639,7 @@ function App() {
         terminalHeight,
         livePreviewMode,
         livePreviewWidth,
+        sidebarWidth,
         welcomeTabOpen,
       };
     }
@@ -426,6 +679,7 @@ function App() {
       setTerminalHeight(Number(nextState.layout.terminalHeight) || 220);
       setLivePreviewMode(nextState.layout.livePreviewMode === 'tab' ? 'tab' : 'split');
       setLivePreviewWidth(Math.min(780, Math.max(280, Number(nextState.layout.livePreviewWidth) || 380)));
+      setSidebarWidth(Math.min(620, Math.max(280, Number(nextState.layout.sidebarWidth) || 380)));
       setWelcomeTabOpen(nextState.layout.welcomeTabOpen !== false);
     }
 
@@ -1067,16 +1321,26 @@ function App() {
     setIsResizingLivePreview(true);
   }
 
+  function startSidebarResize() {
+    if (!hasSidebar) {
+      return;
+    }
+
+    setIsResizingSidebar(true);
+  }
+
   useEffect(() => {
     return () => {
       Object.values(saveTimersRef.current).forEach((timerId) => clearTimeout(timerId));
       clearTimeout(syncPushTimerRef.current);
+      clearTimeout(editorWorkspaceSyncTimerRef.current);
       editorListenersCleanupRef.current();
       confirmationResolverRef.current?.(false);
       clearLivePreview();
       setLivePreviewDocument('');
       livePreviewWindowRef.current?.close?.();
       livePreviewChannelRef.current?.close?.();
+      lspBridgeRef.current?.dispose?.();
     };
   }, []);
 
@@ -1092,13 +1356,23 @@ function App() {
     const terminalOffset = terminalOpen ? terminalHeight : 0;
     return `calc(88.5vh - 46px - ${terminalOffset}px)`;
   }, [terminalHeight, terminalOpen]);
+  const sidebarPanelWidth = useMemo(() => (hasSidebar ? sidebarWidth : 0), [hasSidebar, sidebarWidth]);
   const editorContentWidth = useMemo(() => {
-    const baseWidth = hasSidebar ? '72vw' : '92vw';
+    const baseWidth = hasSidebar ? `calc(95vw - ${sidebarPanelWidth}px)` : '92vw';
     return previewColumnOpen ? `calc(${baseWidth} - ${livePreviewWidth + 10}px)` : baseWidth;
-  }, [hasSidebar, livePreviewWidth, previewColumnOpen]);
+  }, [hasSidebar, livePreviewWidth, previewColumnOpen, sidebarPanelWidth]);
   const maincodeareaStyle = useMemo(
-    () => ({ width: hasSidebar ? '72vw' : '92vw', height: '88.5vh' }),
-    [hasSidebar]
+    () => ({ width: hasSidebar ? `calc(95vw - ${sidebarPanelWidth}px)` : '92vw', height: '88.5vh' }),
+    [hasSidebar, sidebarPanelWidth]
+  );
+  const sideBarWrapperStyle = useMemo(
+    () => (hasSidebar
+      ? {
+          width: `${sidebarPanelWidth}px`,
+          '--sidebar-content-width': `${Math.max(240, sidebarPanelWidth - 58)}px`,
+        }
+      : {}),
+    [hasSidebar, sidebarPanelWidth]
   );
   const monacoEditorStyle = useMemo(
     () => ({ width: editorContentWidth, height: editorSurfaceHeight, opacity: '1' }),
@@ -1124,6 +1398,222 @@ function App() {
       })),
     [effectiveBindings]
   );
+  const activeIntelliSense = useMemo(() => {
+    if (!activeTab?.language) {
+      return null;
+    }
+
+    const description = describeLanguageIntelliSense(editorCapabilities, activeTab.language);
+    if (!description) {
+      return null;
+    }
+
+    if (editorCapabilitiesStatus !== 'ready' && description.providerType !== 'native') {
+      return {
+        ...description,
+        statusLabel: 'IntelliSense: checking...',
+        detail: 'Checking local IntelliSense providers...',
+      };
+    }
+
+    if (
+      description.providerType === 'lsp' &&
+      description.available &&
+      lspBridgeState.languageId === activeTab.language
+    ) {
+      if (lspBridgeState.status === 'connected') {
+        return {
+          ...description,
+          statusLabel:
+            editorCapabilities.runtimeMode === 'desktop-local'
+              ? `IntelliSense: ${description.serverLabel || 'LSP ready'}`
+              : 'IntelliSense: backend connected',
+          detail: lspBridgeState.message || description.detail,
+        };
+      }
+
+      if (lspBridgeState.status === 'connecting' || lspBridgeState.status === 'restarting') {
+        return {
+          ...description,
+          statusLabel: 'IntelliSense: connecting...',
+          detail: lspBridgeState.message || 'Connecting to the language server...',
+        };
+      }
+
+      if (lspBridgeState.status === 'error' || lspBridgeState.status === 'disconnected') {
+        return {
+          ...description,
+          available: false,
+          statusLabel: 'IntelliSense: bridge error',
+          detail: lspBridgeState.message || 'The language server bridge is not connected.',
+        };
+      }
+    }
+
+    return description;
+  }, [activeTab?.language, editorCapabilities, editorCapabilitiesStatus, lspBridgeState]);
+
+  useEffect(() => {
+    const noticeKey = `${activeTab?.language || ''}:${activeIntelliSense?.statusLabel || ''}:${activeIntelliSense?.detail || ''}`;
+    if (
+      !activeTab?.language ||
+      !activeIntelliSense ||
+      activeIntelliSense.available ||
+      activeIntelliSense.providerType !== 'lsp' ||
+      editorCapabilityNoticeRef.current === noticeKey
+    ) {
+      return;
+    }
+
+    editorCapabilityNoticeRef.current = noticeKey;
+    pushNotification(activeIntelliSense.detail, 'info');
+  }, [activeIntelliSense, activeTab?.language]);
+
+  useEffect(() => {
+    clearTimeout(editorWorkspaceSyncTimerRef.current);
+
+    if (
+      !activeTab?.language ||
+      !activeIntelliSense ||
+      activeIntelliSense.providerType !== 'lsp' ||
+      !activeIntelliSense.available ||
+      editorCapabilitiesStatus !== 'ready'
+    ) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    editorWorkspaceSyncTimerRef.current = setTimeout(() => {
+      workspace
+        .getSyncPayload()
+        .then((payload) => {
+          if (cancelled || !payload) {
+            return null;
+          }
+
+          return upsertEditorWorkspaceSession(payload, editorWorkspaceSession?.sessionId || '');
+        })
+        .then((session) => {
+          if (!session || cancelled) {
+            return;
+          }
+
+          setEditorWorkspaceSession(session);
+        })
+        .catch((error) => {
+          if (cancelled) {
+            return;
+          }
+
+          setLspBridgeState({
+            status: 'error',
+            languageId: activeTab.language,
+            message: error instanceof Error ? error.message : 'Unable to sync the editor workspace mirror.',
+          });
+        });
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(editorWorkspaceSyncTimerRef.current);
+    };
+  }, [
+    activeIntelliSense,
+    activeTab?.content,
+    activeTab?.id,
+    activeTab?.language,
+    editorCapabilitiesStatus,
+    editorWorkspaceSession?.sessionId,
+    version,
+  ]);
+
+  useEffect(() => {
+    const shouldUseLspBridge =
+      activeTab?.language &&
+      activeIntelliSense?.providerType === 'lsp' &&
+      activeIntelliSense.available &&
+      editorWorkspaceSession?.sessionId &&
+      editorWorkspaceSession?.workspaceRoot;
+
+    if (!shouldUseLspBridge) {
+      lspBridgeRef.current?.dispose?.();
+      lspBridgeRef.current = null;
+      setActiveLspBridge(null);
+      setLspBridgeState((current) =>
+        current.status === 'idle' && !current.languageId
+          ? current
+          : { status: 'idle', languageId: '', message: '' }
+      );
+      return undefined;
+    }
+
+    setLspBridgeState({
+      status: 'connecting',
+      languageId: activeTab.language,
+      message: 'Connecting to the language server...',
+    });
+
+    const bridge = createLspBridge({
+      languageId: activeTab.language,
+      sessionId: editorWorkspaceSession.sessionId,
+      workspaceRoot: editorWorkspaceSession.workspaceRoot,
+      onStatus: (payload) => {
+        setLspBridgeState({
+          status: payload?.status || 'unknown',
+          languageId: payload?.languageId || activeTab.language,
+          message: payload?.message || payload?.serverLabel || '',
+        });
+      },
+    });
+
+    lspBridgeRef.current?.dispose?.();
+    lspBridgeRef.current = bridge;
+    setActiveLspBridge(bridge);
+
+    return () => {
+      bridge.dispose();
+      if (lspBridgeRef.current === bridge) {
+        lspBridgeRef.current = null;
+      }
+      setActiveLspBridge((current) => (current === bridge ? null : current));
+    };
+  }, [
+    activeIntelliSense,
+    activeTab?.language,
+    editorWorkspaceSession?.sessionId,
+    editorWorkspaceSession?.workspaceRoot,
+  ]);
+
+  useEffect(() => {
+    if (
+      !activeLspBridge ||
+      !activeTab?.language ||
+      activeIntelliSense?.providerType !== 'lsp' ||
+      !activeIntelliSense.available
+    ) {
+      return undefined;
+    }
+
+    const relativePath = activeTab.path === 'root' ? activeTab.name : activeTab.path;
+    const timer = window.setTimeout(() => {
+      activeLspBridge
+        .syncDocument({
+          relativePath,
+          fileName: activeTab.name,
+          text: activeTab.content ?? '',
+        })
+        .catch(() => null);
+    }, 60);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    activeIntelliSense,
+    activeLspBridge,
+    activeTab?.content,
+    activeTab?.language,
+    activeTab?.name,
+    activeTab?.path,
+  ]);
 
   useEffect(() => {
     if (!isResizingTerminal) {
@@ -1182,6 +1672,34 @@ function App() {
   }, [isResizingLivePreview]);
 
   useEffect(() => {
+    if (!isResizingSidebar) {
+      return undefined;
+    }
+
+    function handlePointerMove(event) {
+      const bounds = sideBarWrapperRef.current?.getBoundingClientRect();
+      if (!bounds) {
+        return;
+      }
+
+      const nextWidth = Math.min(620, Math.max(280, bounds.right - event.clientX));
+      setSidebarWidth(nextWidth);
+    }
+
+    function stopResizing() {
+      setIsResizingSidebar(false);
+    }
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', stopResizing);
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [isResizingSidebar]);
+
+  useEffect(() => {
     if (!authSessionReadyRef.current || !authSession.syncProvider || applyingSyncStateRef.current) {
       return undefined;
     }
@@ -1210,6 +1728,7 @@ function App() {
     customKeybindings,
     livePreviewMode,
     livePreviewWidth,
+    sidebarWidth,
     settings,
     terminalHeight,
     terminalOpen,
@@ -1389,27 +1908,93 @@ function App() {
   }
 
   function handleGoToLine() {
-    runEditorAction('editor.action.gotoLine');
+    const currentLine = editorStatus.line || 1;
+    const currentColumn = editorStatus.column || 1;
+    openGoOverlay('line', `${currentLine}:${currentColumn}`);
   }
 
   function handleGoToFile() {
-    openSearchPanel({ mode: 'files', query: '', scope: 'workspace' });
+    if (activePanel === 'search') {
+      closeGoOverlay();
+      openSearchPanel({ mode: 'files', query: '', scope: 'workspace' });
+      return;
+    }
+
+    openGoOverlay('file', '');
   }
 
   function handleGoToSymbolInWorkspace() {
-    openSearchPanel({ mode: 'symbols', query: '', scope: 'workspace' });
+    if (activePanel === 'search') {
+      closeGoOverlay();
+      openSearchPanel({ mode: 'symbols', query: '', scope: 'workspace' });
+      return;
+    }
+
+    openGoOverlay('workspace-symbol', '');
   }
 
   function handleGoToSymbolInEditor() {
-    runEditorAction('editor.action.quickOutline');
+    if (activePanel === 'search') {
+      closeGoOverlay();
+      openSearchPanel({ mode: 'symbols', query: '', scope: 'open' });
+      return;
+    }
+
+    openGoOverlay('editor-symbol', '');
   }
 
   function handleGoToDefinition() {
+    closeGoOverlay();
     runEditorAction('editor.action.revealDefinition');
   }
 
   function handleGoToReferences() {
+    closeGoOverlay();
     runEditorAction('editor.action.goToReferences');
+  }
+
+  function submitGoToLine() {
+    const editor = editorRef.current;
+    const model = editor?.getModel?.();
+
+    if (!editor || !model) {
+      closeGoOverlay();
+      return;
+    }
+
+    const raw = String(goOverlay.value || '').trim();
+    if (!raw) {
+      closeGoOverlay();
+      return;
+    }
+
+    const [rawLine = '', rawColumn = ''] = raw.split(':');
+    const lineNumber = Math.min(Math.max(1, Number.parseInt(rawLine, 10) || 1), model.getLineCount());
+    const column = Math.min(
+      Math.max(1, Number.parseInt(rawColumn, 10) || 1),
+      model.getLineMaxColumn(lineNumber)
+    );
+
+    editor.setPosition({ lineNumber, column });
+    editor.revealPositionInCenter({ lineNumber, column });
+    editor.focus();
+    closeGoOverlay();
+  }
+
+  function handleGoOverlayResultSelect(result) {
+    handleOpenSearchResult(result);
+    closeGoOverlay();
+  }
+
+  function submitGoOverlayAction() {
+    if (goOverlay.mode === 'line') {
+      submitGoToLine();
+      return;
+    }
+
+    if (goOverlay.results.length) {
+      handleGoOverlayResultSelect(goOverlay.results[0]);
+    }
   }
 
   function getLivePreviewStorageKey() {
@@ -2272,6 +2857,9 @@ function App() {
                       onChange={handleEditorChange}
                       onMount={onEditorMount}
                       onOpenCommandPalette={openCommandPalette}
+                      onGoToLine={handleGoToLine}
+                      intelliSense={activeIntelliSense}
+                      lspBridge={activeLspBridge}
                       settings={settings}
                       MonacoEditorDisplay="flex"
                       monacoEditorStyle={monacoEditorStyle}
@@ -2323,7 +2911,14 @@ function App() {
               />
             </div>
           </div>
-          <div className="SideBarmainwrper">
+          <div className="SideBarmainwrper" style={sideBarWrapperStyle} ref={sideBarWrapperRef}>
+            {hasSidebar ? (
+              <div
+                className={`sidebar-resizer ${isResizingSidebar ? 'is-active' : ''}`}
+                onMouseDown={startSidebarResize}
+                title="Resize Sidebar"
+              />
+            ) : null}
             <CodeBlocks ariaExpandedisplaycodeblocks={panelDisplay('codeblocks')} />
             <Git
               ariaExpandedisplaygit={panelDisplay('git')}
@@ -2337,6 +2932,8 @@ function App() {
               ariaExpandedisplaygithub={panelDisplay('github')}
               authSession={authSession}
               openAccount={openAccount}
+              workspace={workspace}
+              pushNotification={pushNotification}
             />
             <Debug
               ariaExpandedisplaydebug={panelDisplay('debug')}
@@ -2365,6 +2962,12 @@ function App() {
               searchFocusNonce={searchFocusNonce}
               openSearchResult={handleOpenSearchResult}
               searchRequest={searchRequest}
+              onGoToLine={handleGoToLine}
+              onGoToFile={handleGoToFile}
+              onGoToSymbolInWorkspace={handleGoToSymbolInWorkspace}
+              onGoToSymbolInEditor={handleGoToSymbolInEditor}
+              onGoToDefinition={handleGoToDefinition}
+              onGoToReferences={handleGoToReferences}
             />
             <FilePioneer
               ariaExpandedisplayfilepioneer={panelDisplay('filepioneer')}
@@ -2393,8 +2996,154 @@ function App() {
             />
           </div>
         </div>
+        {goOverlay.open ? (
+          <div
+            className="go-overlay"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                closeGoOverlay();
+              }
+            }}
+          >
+            <div className="go-popup" onMouseDown={(event) => event.stopPropagation()}>
+              <div className="go-popup-header">
+                <div>
+                  <div className="go-popup-eyebrow">Go</div>
+                  <div className="go-popup-title">Quick Navigation</div>
+                </div>
+                <button type="button" className="go-popup-close" onClick={closeGoOverlay}>
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+              <div className="go-popup-actions">
+                <button
+                  type="button"
+                  className={`go-popup-chip ${goOverlay.mode === 'line' ? 'active' : ''}`}
+                  onClick={() => openGoOverlay('line', goOverlay.value || `${editorStatus.line || 1}:${editorStatus.column || 1}`)}
+                >
+                  Line
+                </button>
+                <button
+                  type="button"
+                  className={`go-popup-chip ${goOverlay.mode === 'file' ? 'active' : ''}`}
+                  onClick={() => openGoOverlay('file', goOverlay.mode === 'file' ? goOverlay.value : '')}
+                >
+                  File
+                </button>
+                <button
+                  type="button"
+                  className={`go-popup-chip ${goOverlay.mode === 'workspace-symbol' ? 'active' : ''}`}
+                  onClick={() =>
+                    openGoOverlay('workspace-symbol', goOverlay.mode === 'workspace-symbol' ? goOverlay.value : '')
+                  }
+                >
+                  Workspace Symbol
+                </button>
+                <button
+                  type="button"
+                  className={`go-popup-chip ${goOverlay.mode === 'editor-symbol' ? 'active' : ''}`}
+                  onClick={() =>
+                    openGoOverlay('editor-symbol', goOverlay.mode === 'editor-symbol' ? goOverlay.value : '')
+                  }
+                >
+                  Editor Symbol
+                </button>
+                <button type="button" className="go-popup-chip" onClick={handleGoToDefinition}>
+                  Definition
+                </button>
+                <button type="button" className="go-popup-chip" onClick={handleGoToReferences}>
+                  References
+                </button>
+              </div>
+              <div className="go-popup-body">
+                <div className="go-popup-copy">
+                  {goOverlay.mode === 'line'
+                    ? 'Jump to a specific line and optional column using `line` or `line:column`.'
+                    : goOverlay.mode === 'file'
+                      ? 'Start typing a file name or path to jump straight to it without opening Search.'
+                      : goOverlay.mode === 'workspace-symbol'
+                        ? 'Search symbols across the workspace and jump straight to the match.'
+                        : 'Search symbols inside the current editor and jump straight to the match.'}
+                </div>
+                <div className="go-popup-input-row">
+                  <input
+                    ref={goOverlayInputRef}
+                    type="text"
+                    className="go-popup-input"
+                    value={goOverlay.value}
+                    onChange={(event) => setGoOverlay((current) => ({ ...current, value: event.target.value }))}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        submitGoOverlayAction();
+                      }
+                    }}
+                    placeholder={
+                      goOverlay.mode === 'line'
+                        ? '12 or 12:4'
+                        : goOverlay.mode === 'file'
+                          ? 'App.jsx or src/App.jsx'
+                          : goOverlay.mode === 'workspace-symbol'
+                            ? 'Search workspace symbols'
+                            : 'Search symbols in current file'
+                    }
+                    spellCheck={false}
+                  />
+                  <button type="button" className="go-popup-submit" onClick={submitGoOverlayAction}>
+                    Go
+                  </button>
+                </div>
+                {goOverlay.mode === 'line' ? (
+                  <div className="go-popup-hint">
+                    Current position: line {editorStatus.line || 1}, column {editorStatus.column || 1}
+                  </div>
+                ) : (
+                  <>
+                    <div className="go-popup-hint">
+                      {goOverlay.loading
+                        ? 'Searching...'
+                        : goOverlay.error
+                          ? goOverlay.error
+                          : goOverlay.value.trim()
+                            ? `${goOverlay.results.length} quick match${goOverlay.results.length === 1 ? '' : 'es'}`
+                            : 'Type to start searching.'}
+                    </div>
+                    <div className="go-popup-results">
+                      {goOverlay.results.length ? (
+                        goOverlay.results.map((result) => (
+                          <button
+                            key={`${result.path}-${result.line || 0}-${result.column || 0}-${result.name}`}
+                            type="button"
+                            className="go-popup-result"
+                            onClick={() => handleGoOverlayResultSelect(result)}
+                          >
+                            <div className="go-popup-result-title">
+                              <span>{result.name}</span>
+                              {result.kind === 'symbol' ? (
+                                <span className="go-popup-result-badge">{result.symbolType}</span>
+                              ) : null}
+                            </div>
+                            <div className="go-popup-result-path">{result.path}</div>
+                            {result.preview ? <div className="go-popup-result-preview">{result.preview}</div> : null}
+                          </button>
+                        ))
+                      ) : (
+                        <div className="go-popup-empty">
+                          {goOverlay.value.trim()
+                            ? 'No quick matches yet. Try a different file name or symbol.'
+                            : 'Use the buttons above, then type here to navigate without leaving the popup.'}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
         <StatusBar
           activeTab={activeTab}
+          intelliSense={activeIntelliSense}
           rootName={workspace.rootName || workspace.getRootNode()?.name || ''}
           status={editorStatus}
           notifications={notifications}

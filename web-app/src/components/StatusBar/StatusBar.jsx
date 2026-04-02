@@ -1,26 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { EDITOR_LANGUAGE_REGISTRY } from '../../../shared/editor/languageRegistry.js';
 
-const LANGUAGE_OPTIONS = [
-  { id: 'plaintext', label: 'Plain Text' },
-  { id: 'javascript', label: 'JavaScript' },
-  { id: 'typescript', label: 'TypeScript' },
-  { id: 'html', label: 'HTML' },
-  { id: 'css', label: 'CSS' },
-  { id: 'json', label: 'JSON' },
-  { id: 'markdown', label: 'Markdown' },
-  { id: 'python', label: 'Python' },
-  { id: 'java', label: 'Java' },
-  { id: 'php', label: 'PHP' },
-  { id: 'ruby', label: 'Ruby' },
-  { id: 'rust', label: 'Rust' },
-  { id: 'sql', label: 'SQL' },
-  { id: 'shell', label: 'Shell Script' },
-  { id: 'xml', label: 'XML' },
-  { id: 'yaml', label: 'YAML' },
-  { id: 'go', label: 'Go' },
-  { id: 'cpp', label: 'C/C++' },
-  { id: 'csharp', label: 'C#' },
-];
+const LANGUAGE_OPTIONS = [...EDITOR_LANGUAGE_REGISTRY]
+  .map((entry) => ({
+    id: entry.id,
+    label: entry.aliases?.[0] || entry.id,
+  }))
+  .sort((left, right) => {
+    if (left.id === 'plaintext') {
+      return -1;
+    }
+
+    if (right.id === 'plaintext') {
+      return 1;
+    }
+
+    return left.label.localeCompare(right.label);
+  });
 
 const INDENT_OPTIONS = [
   { id: 'spaces-2', label: 'Spaces: 2', insertSpaces: true, tabSize: 2 },
@@ -71,6 +67,7 @@ function Menu({ title, children, anchorRef, onClose }) {
 
 export default function StatusBar({
   activeTab,
+  intelliSense,
   rootName,
   status,
   notifications,
@@ -193,6 +190,11 @@ export default function StatusBar({
             <span className="statusbar-badge">Web</span>
             <span className="statusbar-item subtle">{rootLabel}</span>
             {activeTab ? <span className="statusbar-item subtle">{activeTab.dirty ? 'Unsaved Changes' : 'Ready'}</span> : null}
+            {activeTab && intelliSense ? (
+              <span className="statusbar-item subtle" title={intelliSense.detail}>
+                {intelliSense.statusLabel}
+              </span>
+            ) : null}
             <button
               type="button"
               className="statusbar-item statusbar-notification-button"
