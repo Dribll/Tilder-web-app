@@ -1,10 +1,11 @@
-FROM node:22-bookworm-slim
+FROM node:20-bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/root/go/bin:/root/.config/composer/vendor/bin:/root/.composer/vendor/bin:${PATH}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        build-essential \
         clangd \
         ca-certificates \
         cargo \
