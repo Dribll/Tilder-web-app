@@ -1,7 +1,9 @@
 FROM node:20-bookworm-slim
 
+ARG GO_VERSION=1.24.2
+
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="/root/go/bin:/root/.config/composer/vendor/bin:/root/.composer/vendor/bin:${PATH}"
+ENV PATH="/usr/local/go/bin:/root/go/bin:/root/.config/composer/vendor/bin:/root/.composer/vendor/bin:${PATH}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -12,7 +14,6 @@ RUN apt-get update \
         composer \
         curl \
         git \
-        golang-go \
         openjdk-17-jre-headless \
         php-cli \
         python3 \
@@ -20,6 +21,11 @@ RUN apt-get update \
         rust-web-analyzer \
         unzip \
     && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz \
+    && rm -rf /usr/local/go \
+    && tar -C /usr/local -xzf /tmp/go.tgz \
+    && rm /tmp/go.tgz
 
 WORKDIR /app
 
