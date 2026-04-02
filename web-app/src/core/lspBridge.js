@@ -39,7 +39,10 @@ export function createLspBridge({
 }) {
   const socket = io(`${getApiOrigin()}/lsp`, {
     withCredentials: true,
-    transports: ['websocket'],
+    autoConnect: false,
+    transports: ['polling', 'websocket'],
+    timeout: 10_000,
+    reconnectionAttempts: 2,
     query: {
       languageId,
       sessionId,
@@ -53,13 +56,43 @@ export function createLspBridge({
   let activeDocument = null;
   const pendingRequests = new Map();
   const documentVersions = new Map();
+  let handshakeStatusTimer = null;
+
+  function clearHandshakeTimer() {
+    if (handshakeStatusTimer) {
+      window.clearTimeout(handshakeStatusTimer);
+      handshakeStatusTimer = null;
+    }
+  }
+
+  function armHandshakeTimer() {
+    clearHandshakeTimer();
+    handshakeStatusTimer = window.setTimeout(() => {
+      onStatus({
+        status: 'error',
+        languageId,
+        message: 'The language server bridge timed out while starting.',
+      });
+      socket.disconnect();
+    }, 12_000);
+  }
 
   function rejectAllPending(error) {
     pendingRequests.forEach(({ reject }) => reject(error));
     pendingRequests.clear();
   }
 
+  socket.on('connect', () => {
+    onStatus({
+      status: 'connecting',
+      languageId,
+      message: 'Connected to the bridge. Starting language server...',
+    });
+    armHandshakeTimer();
+  });
+
   socket.on('connect_error', (error) => {
+    clearHandshakeTimer();
     onStatus({
       status: 'error',
       languageId,
@@ -69,6 +102,7 @@ export function createLspBridge({
   });
 
   socket.on('disconnect', () => {
+    clearHandshakeTimer();
     onStatus({
       status: 'disconnected',
       languageId,
@@ -78,6 +112,7 @@ export function createLspBridge({
   });
 
   socket.on('lsp:status', (payload) => {
+    clearHandshakeTimer();
     onStatus(payload || { status: 'unknown', languageId });
   });
 
@@ -98,6 +133,14 @@ export function createLspBridge({
       resolve(message.result);
     }
   });
+
+  onStatus({
+    status: 'connecting',
+    languageId,
+    message: 'Connecting to the language server bridge...',
+  });
+  armHandshakeTimer();
+  socket.connect();
 
   function sendNotification(method, params) {
     socket.emit('lsp:message', {
@@ -236,6 +279,7 @@ export function createLspBridge({
   }
 
   function dispose() {
+    clearHandshakeTimer();
     if (activeDocument?.uri) {
       sendNotification('textDocument/didClose', {
         textDocument: { uri: activeDocument.uri },
