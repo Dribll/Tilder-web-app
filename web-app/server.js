@@ -259,7 +259,14 @@ function getRemoteWorkspaceSession(ownerSessionId, sessionId) {
   }
 
   const session = remoteWorkspaceSessions.get(candidateId);
-  if (!session || session.ownerSessionId !== ownerSessionId) {
+  if (!session) {
+    return null;
+  }
+
+  // Hosted-web LSP sockets can arrive without the original session cookie on some
+  // cross-origin/browser configurations. In that case, the opaque workspace-session
+  // id itself acts as the capability to resume the mirrored workspace.
+  if (ownerSessionId && session.ownerSessionId !== ownerSessionId) {
     return null;
   }
 
@@ -1933,7 +1940,8 @@ lspNamespace.on('connection', async (socket) => {
 
   try {
     const remoteWorkspaceSession = remoteWorkspaceSessionId
-      ? getRemoteWorkspaceSession(ownerSession?.id || '', remoteWorkspaceSessionId)
+      ? getRemoteWorkspaceSession(ownerSession?.id || '', remoteWorkspaceSessionId) ||
+        getRemoteWorkspaceSession('', remoteWorkspaceSessionId)
       : null;
     const workspaceRoot =
       remoteWorkspaceSession?.workspaceRoot || (runtimeMode === 'desktop-local' ? requestedWorkspaceRoot : '');
