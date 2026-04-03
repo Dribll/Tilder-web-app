@@ -267,13 +267,14 @@ export function createLspBridge({
     return uri;
   }
 
-  async function requestCompletion({ relativePath, fileName, text, position }) {
+  async function requestCompletion({ relativePath, fileName, text, position, triggerCharacter }) {
     const uri = await syncDocument({ relativePath, fileName, text });
     return sendRequest('textDocument/completion', {
       textDocument: { uri },
       position: toLspPosition(position),
       context: {
-        triggerKind: 1,
+        triggerKind: triggerCharacter ? 2 : 1,
+        ...(triggerCharacter ? { triggerCharacter } : {}),
       },
     });
   }

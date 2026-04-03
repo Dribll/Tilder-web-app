@@ -24,6 +24,83 @@ let emmetRegistered = false;
 let embeddedCssProviderRegistered = false;
 let embeddedCssPropertiesCache = null;
 const lspCompletionRegistrations = new Map();
+const FALLBACK_LANGUAGE_COMPLETIONS = {
+  c: [
+    { label: 'main', kind: 'snippet', insertText: 'int main(void) {\n\t$0\n\treturn 0;\n}', detail: 'Main function' },
+    { label: '#include', kind: 'keyword', insertText: '#include <$0>', detail: 'Include header' },
+    { label: 'printf', kind: 'function', insertText: 'printf("${1:text}\\n"${2});', detail: 'Print formatted output' },
+    { label: 'for', kind: 'snippet', insertText: 'for (int ${1:i} = 0; ${1:i} < ${2:n}; ${1:i}++) {\n\t$0\n}', detail: 'For loop' },
+    { label: 'if', kind: 'snippet', insertText: 'if (${1:condition}) {\n\t$0\n}', detail: 'If statement' },
+    { label: 'while', kind: 'snippet', insertText: 'while (${1:condition}) {\n\t$0\n}', detail: 'While loop' },
+    { label: 'struct', kind: 'snippet', insertText: 'struct ${1:Name} {\n\t$0\n};', detail: 'Struct declaration' },
+  ],
+  cpp: [
+    { label: 'main', kind: 'snippet', insertText: 'int main() {\n\t$0\n\treturn 0;\n}', detail: 'Main function' },
+    { label: '#include', kind: 'keyword', insertText: '#include <$0>', detail: 'Include header' },
+    { label: 'cout', kind: 'snippet', insertText: 'std::cout << ${1:value} << std::endl;$0', detail: 'Standard output' },
+    { label: 'cin', kind: 'snippet', insertText: 'std::cin >> ${1:value};$0', detail: 'Standard input' },
+    { label: 'for', kind: 'snippet', insertText: 'for (int ${1:i} = 0; ${1:i} < ${2:n}; ${1:i}++) {\n\t$0\n}', detail: 'For loop' },
+    { label: 'if', kind: 'snippet', insertText: 'if (${1:condition}) {\n\t$0\n}', detail: 'If statement' },
+    { label: 'class', kind: 'snippet', insertText: 'class ${1:Name} {\npublic:\n\t${1:Name}();\n\t$0\n};', detail: 'Class declaration' },
+    { label: 'struct', kind: 'snippet', insertText: 'struct ${1:Name} {\n\t$0\n};', detail: 'Struct declaration' },
+    { label: 'namespace', kind: 'snippet', insertText: 'namespace ${1:name} {\n\t$0\n}', detail: 'Namespace declaration' },
+  ],
+  python: [
+    { label: 'def', kind: 'snippet', insertText: 'def ${1:name}(${2:args}):\n\t$0', detail: 'Function definition' },
+    { label: 'class', kind: 'snippet', insertText: 'class ${1:Name}:\n\tdef __init__(self${2:, args}):\n\t\t$0', detail: 'Class definition' },
+    { label: 'ifmain', kind: 'snippet', insertText: 'if __name__ == "__main__":\n\t$0', detail: 'Entry point guard' },
+    { label: 'for', kind: 'snippet', insertText: 'for ${1:item} in ${2:items}:\n\t$0', detail: 'For loop' },
+  ],
+  java: [
+    { label: 'main', kind: 'snippet', insertText: 'public static void main(String[] args) {\n\t$0\n}', detail: 'Main method' },
+    { label: 'sout', kind: 'snippet', insertText: 'System.out.println(${1});$0', detail: 'Print line' },
+    { label: 'class', kind: 'snippet', insertText: 'public class ${1:Main} {\n\t$0\n}', detail: 'Class declaration' },
+  ],
+  go: [
+    { label: 'main', kind: 'snippet', insertText: 'func main() {\n\t$0\n}', detail: 'Main function' },
+    { label: 'func', kind: 'snippet', insertText: 'func ${1:name}(${2:args}) ${3:error} {\n\t$0\n}', detail: 'Function declaration' },
+    { label: 'iferr', kind: 'snippet', insertText: 'if err != nil {\n\t$0\n}', detail: 'Error guard' },
+  ],
+  rust: [
+    { label: 'main', kind: 'snippet', insertText: 'fn main() {\n\t$0\n}', detail: 'Main function' },
+    { label: 'println', kind: 'snippet', insertText: 'println!(\"${1}\");$0', detail: 'Print line' },
+    { label: 'impl', kind: 'snippet', insertText: 'impl ${1:Type} {\n\t$0\n}', detail: 'Impl block' },
+  ],
+  csharp: [
+    { label: 'main', kind: 'snippet', insertText: 'static void Main(string[] args)\n{\n\t$0\n}', detail: 'Main method' },
+    { label: 'class', kind: 'snippet', insertText: 'class ${1:Program}\n{\n\t$0\n}', detail: 'Class declaration' },
+  ],
+  php: [
+    { label: 'echo', kind: 'snippet', insertText: 'echo ${1:$value};$0', detail: 'Output expression' },
+    { label: 'function', kind: 'snippet', insertText: 'function ${1:name}(${2:$args}) {\n\t$0\n}', detail: 'Function declaration' },
+  ],
+  shell: [
+    { label: '#!/usr/bin/env bash', kind: 'snippet', insertText: '#!/usr/bin/env bash\n\n$0', detail: 'Bash shebang' },
+    { label: 'if', kind: 'snippet', insertText: 'if [[ ${1:condition} ]]; then\n\t$0\nfi', detail: 'If statement' },
+    { label: 'for', kind: 'snippet', insertText: 'for ${1:item} in ${2:list}; do\n\t$0\ndone', detail: 'For loop' },
+    { label: 'case', kind: 'snippet', insertText: 'case "${1:value}" in\n\t${2:pattern})\n\t\t$0\n\t\t;;\nesac', detail: 'Case statement' },
+    { label: 'echo', kind: 'snippet', insertText: 'echo "${1:text}"$0', detail: 'Print text' },
+    { label: 'function', kind: 'snippet', insertText: '${1:name}() {\n\t$0\n}', detail: 'Shell function' },
+  ],
+  yaml: [
+    { label: 'key', kind: 'snippet', insertText: '${1:key}: ${2:value}$0', detail: 'Key-value pair' },
+    { label: 'list', kind: 'snippet', insertText: '${1:key}:\n  - ${2:item}$0', detail: 'YAML list' },
+    { label: 'map', kind: 'snippet', insertText: '${1:key}:\n  ${2:child}: ${3:value}$0', detail: 'Nested mapping' },
+    { label: 'true', kind: 'keyword', insertText: 'true', detail: 'Boolean true' },
+    { label: 'false', kind: 'keyword', insertText: 'false', detail: 'Boolean false' },
+    { label: 'null', kind: 'keyword', insertText: 'null', detail: 'Null value' },
+  ],
+  dockerfile: [
+    { label: 'FROM', kind: 'keyword', insertText: 'FROM ${1:image}:${2:tag}$0', detail: 'Base image' },
+    { label: 'RUN', kind: 'keyword', insertText: 'RUN ${1:command}$0', detail: 'Run shell command' },
+    { label: 'COPY', kind: 'keyword', insertText: 'COPY ${1:source} ${2:destination}$0', detail: 'Copy files' },
+    { label: 'WORKDIR', kind: 'keyword', insertText: 'WORKDIR ${1:/app}$0', detail: 'Working directory' },
+    { label: 'CMD', kind: 'snippet', insertText: 'CMD ["${1:executable}", "${2:arg}"]$0', detail: 'Container command' },
+    { label: 'ENTRYPOINT', kind: 'snippet', insertText: 'ENTRYPOINT ["${1:executable}"]$0', detail: 'Container entrypoint' },
+    { label: 'ENV', kind: 'keyword', insertText: 'ENV ${1:NAME}=${2:value}$0', detail: 'Environment variable' },
+    { label: 'EXPOSE', kind: 'keyword', insertText: 'EXPOSE ${1:3000}$0', detail: 'Expose port' },
+  ],
+};
 
 function toMonacoCompletionKind(monaco, lspKind) {
   const completionKind = monaco.languages.CompletionItemKind;
@@ -61,23 +138,74 @@ function toMonacoCompletionKind(monaco, lspKind) {
 function toMonacoCompletionItems(monaco, response, range) {
   const rawItems = Array.isArray(response) ? response : Array.isArray(response?.items) ? response.items : [];
 
-  return rawItems.map((item, index) => ({
-    label: typeof item.label === 'string' ? item.label : item.label?.label || '',
-    kind: toMonacoCompletionKind(monaco, item.kind),
-    insertText: item.insertText || (typeof item.label === 'string' ? item.label : item.label?.label || ''),
-    insertTextRules:
-      item.insertTextFormat === 2
-        ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
-        : monaco.languages.CompletionItemInsertTextRule.None,
+  return rawItems
+    .map((item, index) => {
+      const label =
+        typeof item.label === 'string' ? item.label : item.label?.label || item.insertText || '';
+      const textEditRange =
+        item.textEdit?.range && item.textEdit?.newText
+          ? {
+              startLineNumber: Number(item.textEdit.range.start?.line || 0) + 1,
+              startColumn: Number(item.textEdit.range.start?.character || 0) + 1,
+              endLineNumber: Number(item.textEdit.range.end?.line || 0) + 1,
+              endColumn: Number(item.textEdit.range.end?.character || 0) + 1,
+            }
+          : null;
+
+      return {
+        label,
+        kind: toMonacoCompletionKind(monaco, item.kind),
+        insertText: item.textEdit?.newText || item.insertText || label,
+        insertTextRules:
+          item.insertTextFormat === 2
+            ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+            : monaco.languages.CompletionItemInsertTextRule.None,
+        detail: item.detail || '',
+        documentation:
+          typeof item.documentation === 'string'
+            ? item.documentation
+            : item.documentation?.value || item.documentation?.kind || '',
+        sortText: item.sortText || `z-${String(index).padStart(4, '0')}`,
+        filterText: item.filterText || label,
+        range: textEditRange || range,
+        preselect: Boolean(item.preselect),
+        commitCharacters: Array.isArray(item.commitCharacters) ? item.commitCharacters : undefined,
+      };
+    })
+    .filter((item) => item.label);
+}
+
+function toFallbackCompletionKind(monaco, kind) {
+  switch (kind) {
+    case 'function':
+      return monaco.languages.CompletionItemKind.Function;
+    case 'keyword':
+      return monaco.languages.CompletionItemKind.Keyword;
+    case 'snippet':
+    default:
+      return monaco.languages.CompletionItemKind.Snippet;
+  }
+}
+
+function buildFallbackCompletionItems(monaco, languageId, range) {
+  const items = FALLBACK_LANGUAGE_COMPLETIONS[languageId] || [];
+  return items.map((item, index) => ({
+    label: item.label,
+    kind: toFallbackCompletionKind(monaco, item.kind),
+    insertText: item.insertText,
+    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
     detail: item.detail || '',
-    documentation:
-      typeof item.documentation === 'string'
-        ? item.documentation
-        : item.documentation?.value || item.documentation?.kind || '',
-    sortText: item.sortText || `z-${String(index).padStart(4, '0')}`,
-    filterText: item.filterText || undefined,
+    filterText: item.label,
+    sortText: `zz-${String(index).padStart(4, '0')}`,
     range,
   }));
+}
+
+function getTriggerCharacter(model, position) {
+  const offset = model.getOffsetAt(position);
+  const text = model.getValue();
+  const previousCharacter = text[Math.max(0, offset - 1)] || '';
+  return /[.:>#"'/]/.test(previousCharacter) ? previousCharacter : undefined;
 }
 
 function offsetToRange(model, startOffset, endOffset) {
@@ -389,7 +517,7 @@ function registerLspCompletionProvider(monaco, languageId, getLspContext) {
   }
 
   const disposable = monaco.languages.registerCompletionItemProvider(languageId, {
-    triggerCharacters: ['.', ':', '>', '"', "'", '/', '#'],
+    triggerCharacters: ['.', ':', '>', '"', "'", '/', '#', '(', '<', ' '],
     async provideCompletionItems(model, position) {
       const context = getLspContext();
       if (!context || context.languageId !== languageId || !context.bridge) {
@@ -402,6 +530,7 @@ function registerLspCompletionProvider(monaco, languageId, getLspContext) {
           fileName: context.fileName,
           text: model.getValue(),
           position,
+          triggerCharacter: getTriggerCharacter(model, position),
         });
 
         const word = model.getWordUntilPosition(position);
@@ -412,11 +541,14 @@ function registerLspCompletionProvider(monaco, languageId, getLspContext) {
           endColumn: word.endColumn,
         };
 
+        const suggestions = toMonacoCompletionItems(monaco, response, range);
         return {
-          suggestions: toMonacoCompletionItems(monaco, response, range),
+          suggestions: suggestions.length
+            ? [...suggestions, ...buildFallbackCompletionItems(monaco, languageId, range)]
+            : buildFallbackCompletionItems(monaco, languageId, range),
         };
       } catch {
-        return { suggestions: [] };
+        return { suggestions: buildFallbackCompletionItems(monaco, languageId, range) };
       }
     },
   });
@@ -437,6 +569,7 @@ export default function MonacoEditor({
   lspBridge,
 }) {
   const activeLspContextRef = React.useRef(null);
+  const activeIntelliSenseRef = React.useRef(intelliSense);
 
   if (!settings || !tab) {
     return null;
@@ -512,8 +645,35 @@ export default function MonacoEditor({
       '!suggestWidgetVisible'
     );
 
+    editor.onDidChangeModelContent((event) => {
+      const nextIntelliSense = activeIntelliSenseRef.current;
+      if (!nextIntelliSense?.providerType) {
+        return;
+      }
+
+      const shouldTriggerSuggest = event.changes.some((change) => {
+        if (!change.text) {
+          return false;
+        }
+
+        return /[A-Za-z0-9_:#.<>/"'(-]/.test(change.text);
+      });
+
+      if (!shouldTriggerSuggest) {
+        return;
+      }
+
+      window.setTimeout(() => {
+        editor.trigger('keyboard', 'editor.action.triggerSuggest', {});
+      }, 0);
+    });
+
     onMount?.(editor, monaco);
   }
+
+  React.useEffect(() => {
+    activeIntelliSenseRef.current = intelliSense;
+  }, [intelliSense]);
 
   React.useEffect(() => {
     activeLspContextRef.current =
@@ -562,12 +722,18 @@ export default function MonacoEditor({
           suggest: {
             selectionMode: 'always',
             snippetsPreventQuickSuggestions: false,
+            showWords: true,
+            showSnippets: true,
+            localityBonus: true,
           },
           suggestSelection: 'first',
-          snippetSuggestions: 'inline',
+          snippetSuggestions: 'bottom',
           acceptSuggestionOnEnter: 'on',
           acceptSuggestionOnCommitCharacter: true,
           tabCompletion: 'on',
+          parameterHints: {
+            enabled: true,
+          },
           linkedEditing: true,
           autoClosingBrackets: 'languageDefined',
           autoClosingQuotes: 'always',
