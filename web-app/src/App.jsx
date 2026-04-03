@@ -1452,6 +1452,8 @@ function App() {
 
     return description;
   }, [activeTab?.language, editorCapabilities, editorCapabilitiesStatus, lspBridgeState]);
+  const activeIntelliSenseProviderType = activeIntelliSense?.providerType || '';
+  const activeIntelliSenseAvailable = Boolean(activeIntelliSense?.available);
 
   useEffect(() => {
     const noticeKey = `${activeTab?.language || ''}:${activeIntelliSense?.statusLabel || ''}:${activeIntelliSense?.detail || ''}`;
@@ -1474,9 +1476,8 @@ function App() {
 
     if (
       !activeTab?.language ||
-      !activeIntelliSense ||
-      activeIntelliSense.providerType !== 'lsp' ||
-      !activeIntelliSense.available ||
+      activeIntelliSenseProviderType !== 'lsp' ||
+      !activeIntelliSenseAvailable ||
       editorCapabilitiesStatus !== 'ready'
     ) {
       return undefined;
@@ -1517,21 +1518,22 @@ function App() {
       cancelled = true;
       clearTimeout(editorWorkspaceSyncTimerRef.current);
     };
-  }, [
-    activeIntelliSense,
-    activeTab?.content,
-    activeTab?.id,
-    activeTab?.language,
-    editorCapabilitiesStatus,
-    editorWorkspaceSession?.sessionId,
+    }, [
+      activeIntelliSenseAvailable,
+      activeIntelliSenseProviderType,
+      activeTab?.content,
+      activeTab?.id,
+      activeTab?.language,
+      editorCapabilitiesStatus,
+      editorWorkspaceSession?.sessionId,
     version,
   ]);
 
   useEffect(() => {
     const shouldUseLspBridge =
       activeTab?.language &&
-      activeIntelliSense?.providerType === 'lsp' &&
-      activeIntelliSense.available &&
+      activeIntelliSenseProviderType === 'lsp' &&
+      activeIntelliSenseAvailable &&
       editorWorkspaceSession?.sessionId &&
       editorWorkspaceSession?.workspaceRoot;
 
@@ -1577,19 +1579,20 @@ function App() {
       }
       setActiveLspBridge((current) => (current === bridge ? null : current));
     };
-  }, [
-    activeIntelliSense,
-    activeTab?.language,
-    editorWorkspaceSession?.sessionId,
-    editorWorkspaceSession?.workspaceRoot,
-  ]);
+    }, [
+      activeIntelliSenseAvailable,
+      activeIntelliSenseProviderType,
+      activeTab?.language,
+      editorWorkspaceSession?.sessionId,
+      editorWorkspaceSession?.workspaceRoot,
+    ]);
 
   useEffect(() => {
     if (
       !activeLspBridge ||
       !activeTab?.language ||
-      activeIntelliSense?.providerType !== 'lsp' ||
-      !activeIntelliSense.available
+      activeIntelliSenseProviderType !== 'lsp' ||
+      !activeIntelliSenseAvailable
     ) {
       return undefined;
     }
@@ -1606,12 +1609,13 @@ function App() {
     }, 60);
 
     return () => window.clearTimeout(timer);
-  }, [
-    activeIntelliSense,
-    activeLspBridge,
-    activeTab?.content,
-    activeTab?.language,
-    activeTab?.name,
+    }, [
+      activeIntelliSenseAvailable,
+      activeIntelliSenseProviderType,
+      activeLspBridge,
+      activeTab?.content,
+      activeTab?.language,
+      activeTab?.name,
     activeTab?.path,
   ]);
 
