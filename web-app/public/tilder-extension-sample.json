@@ -1,0 +1,22 @@
+{
+  "extensions": [
+    {
+      "id": "community.dribll.night-signal-theme",
+      "name": "Night Signal Theme",
+      "publisher": "Dribll Community",
+      "category": "Styling",
+      "summary": "A real code-based sample theme for Tilder.",
+      "description": "Night Signal Theme loads a browser module that adds a cooler midnight accent treatment to parts of the Tilder interface.",
+      "tags": ["theme", "dark", "styling", "sample"],
+      "version": "1.0.0",
+      "rating": 4.9,
+      "downloads": "Community",
+      "iconClass": "fa-solid fa-moon",
+      "accent": "#5d85ff",
+      "permissions": ["styles", "notifications"],
+      "webEntrypoint": "/extensions/night-signal/main.js",
+      "website": "/tilder-extension-sample.json",
+      "repository": "/extensions/night-signal/main.js"
+    }
+  ]
+}

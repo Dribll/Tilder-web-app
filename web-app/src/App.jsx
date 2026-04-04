@@ -32,8 +32,11 @@ import { getApiOrigin } from './core/apiBase.js';
 import { beginOAuth, disconnectProvider, fetchAuthSession, openDesktopOAuthUrl, pollDesktopOAuth, pullSyncedState, pushSyncedState, updateSyncPreferences } from './core/accountApi.js';
 import { describeLanguageIntelliSense, fetchEditorCapabilities } from './core/editorApi.js';
 import { upsertEditorWorkspaceSession } from './core/editorSessionApi.js';
+import { buildExtensionCatalog, EXTENSION_STATE_STORAGE_KEY, readStoredExtensionState } from './core/extensionsCatalog.js';
+import { fetchExtensionMarketplace } from './core/extensionsMarketplaceApi.js';
 import { getEffectiveBinding, KEYBINDING_COMMANDS } from './core/keybindings.js';
 import { createLspBridge } from './core/lspBridge.js';
+import { disposeExtensionsRuntime, syncExtensionsRuntime } from './core/extensionsRuntime.js';
 import {
   buildMatcher,
   collectSymbols,
@@ -61,6 +64,25 @@ const DEFAULT_AUTH_SESSION = {
     syncShortcuts: true,
   },
 };
+
+const BUILT_IN_FEATURES = {
+  explorer: true,
+  search: true,
+  commandCenter: true,
+  quickNavigation: true,
+  terminal: true,
+  runDebug: true,
+  livePreview: true,
+  sourceControl: true,
+  githubConnect: true,
+  backendIntelliSense: true,
+  notifications: true,
+  accountHub: true,
+};
+
+const AVAILABLE_SIDEBAR_PANELS = ['filepioneer', 'search', 'git', 'github', 'debug'];
+
+const DEFAULT_SIDEBAR_PANEL = 'filepioneer';
 
 function App() {
   const [settings, setSettings] = useState(() => {
@@ -125,8 +147,11 @@ function App() {
   });
   const [notifications, setNotifications] = useState([]);
   const [version, setVersion] = useState(0);
+  const [extensionState, setExtensionState] = useState(() => readStoredExtensionState());
   const [searchFocusNonce, setSearchFocusNonce] = useState(0);
   const [searchRequest, setSearchRequest] = useState(null);
+  const [marketplaceCatalog, setMarketplaceCatalog] = useState([]);
+  const [marketplacePublishers, setMarketplacePublishers] = useState({});
   const [runnerLanguages, setRunnerLanguages] = useState([]);
   const [runnerLoading, setRunnerLoading] = useState(false);
   const [editorCapabilities, setEditorCapabilities] = useState({
@@ -192,6 +217,7 @@ function App() {
   const lspBridgeRef = useRef(null);
   const [activeLspBridge, setActiveLspBridge] = useState(null);
   const goOverlayInputRef = useRef(null);
+  const extensionCatalog = useMemo(() => buildExtensionCatalog(marketplaceCatalog), [marketplaceCatalog]);
 
   useEffect(() => {
     localStorage.setItem('editorSettings', JSON.stringify(settings));
@@ -200,6 +226,72 @@ function App() {
   useEffect(() => {
     localStorage.setItem('tilderKeybindings', JSON.stringify(customKeybindings));
   }, [customKeybindings]);
+
+  useEffect(() => {
+    function syncExtensionState(event) {
+      if (event?.type === 'storage' && event.key && event.key !== EXTENSION_STATE_STORAGE_KEY) {
+        return;
+      }
+      setExtensionState(readStoredExtensionState());
+    }
+
+    window.addEventListener('storage', syncExtensionState);
+    window.addEventListener('tilder:extensions-updated', syncExtensionState);
+    return () => {
+      window.removeEventListener('storage', syncExtensionState);
+      window.removeEventListener('tilder:extensions-updated', syncExtensionState);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchExtensionMarketplace()
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+
+        setMarketplaceCatalog(Array.isArray(payload.extensions) ? payload.extensions : []);
+        setMarketplacePublishers(payload.publishers && typeof payload.publishers === 'object' ? payload.publishers : {});
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setMarketplaceCatalog([]);
+        setMarketplacePublishers({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    syncExtensionsRuntime({
+      catalog: extensionCatalog,
+      extensionState,
+      pushNotification,
+      getWorkspaceSnapshot: () => ({
+        rootName: workspace.rootName,
+        activeTabId: workspace.activeTabId,
+        tabs: workspace.tabs.map((tab) => ({ id: tab.id, name: tab.name, path: tab.path, language: tab.language })),
+      }),
+      getActiveTabSnapshot: () =>
+        workspace.getActiveTab()
+          ? {
+              id: workspace.getActiveTab().id,
+              name: workspace.getActiveTab().name,
+              path: workspace.getActiveTab().path,
+              language: workspace.getActiveTab().language,
+            }
+          : null,
+    });
+  }, [extensionCatalog, extensionState]);
+
+  useEffect(() => () => disposeExtensionsRuntime(), []);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.BroadcastChannel === 'undefined') {
@@ -517,12 +609,20 @@ function App() {
   }
 
   function openSearchPanel(request = null) {
+    if (!builtInFeatures.search) {
+      notifyExtensionDisabled('Search Navigator');
+      return;
+    }
     setActivePanel('search');
     setSearchRequest(request ? { ...request, nonce: Date.now() } : null);
     setSearchFocusNonce((current) => current + 1);
   }
 
   function openCommandPalette() {
+    if (!builtInFeatures.commandCenter) {
+      notifyExtensionDisabled('Command Center');
+      return;
+    }
     setCommandPaletteOpen(true);
   }
 
@@ -588,6 +688,28 @@ function App() {
   function removeNotificationByKey(key) {
     setNotifications((current) => current.filter((entry) => entry.key !== key));
   }
+
+  const builtInFeatures = BUILT_IN_FEATURES;
+
+  const availableSidebarPanels = AVAILABLE_SIDEBAR_PANELS;
+
+  function firstAvailableSidebarPanel() {
+    return availableSidebarPanels[0] || null;
+  }
+
+  function notifyExtensionDisabled(featureName) {
+    pushNotification(`${featureName} is built into Tilder and always available.`, 'info');
+  }
+
+  function isPanelAvailable(panel) {
+    return AVAILABLE_SIDEBAR_PANELS.includes(panel) || panel === 'codeblocks' || panel === 'extensions';
+  }
+
+  useEffect(() => {
+    if (activePanel && !isPanelAvailable(activePanel)) {
+      setActivePanel(firstAvailableSidebarPanel());
+    }
+  }, [activePanel]);
 
   function armAuthWakeNotification() {
     if (typeof window === 'undefined') {
@@ -1188,6 +1310,11 @@ function App() {
   }
 
   function openAccount() {
+    if (!builtInFeatures.accountHub) {
+      notifyExtensionDisabled('Account Hub');
+      return;
+    }
+
     if (modalOpen && modalType === 'Account') {
       closeCurrentModal();
       return;
@@ -1202,6 +1329,10 @@ function App() {
   }
 
   function toggleTerminalPanel(nextState) {
+    if (!builtInFeatures.terminal) {
+      notifyExtensionDisabled('Terminal Deck');
+      return;
+    }
     setTerminalOpen((current) => (typeof nextState === 'boolean' ? nextState : !current));
   }
 
@@ -1299,6 +1430,11 @@ function App() {
   }
 
   function openKeyboardShortcuts() {
+    if (!builtInFeatures.commandCenter) {
+      notifyExtensionDisabled('Command Center');
+      return;
+    }
+
     if (modalOpen && modalType === 'Keyboard Shortcuts') {
       closeCurrentModal();
       return;
@@ -1349,8 +1485,8 @@ function App() {
   const welcomeTab = welcomeTabOpen ? [{ id: '__welcome__', name: 'Welcome', dirty: false }] : [];
   const visibleTabs = [...welcomeTab, ...tabs];
   const tabActiveId = activeTab ? workspace.activeTabId : (welcomeTabOpen ? '__welcome__' : null);
-  const hasSidebar = activePanel !== null;
-  const showLivePreviewAction = activeTab?.language === 'html';
+  const hasSidebar = Boolean(activePanel && isPanelAvailable(activePanel));
+  const showLivePreviewAction = builtInFeatures.livePreview && activeTab?.language === 'html';
   const previewColumnOpen = livePreviewOpen && livePreviewMode === 'split' && showLivePreviewAction;
   const editorSurfaceHeight = useMemo(() => {
     const terminalOffset = terminalOpen ? terminalHeight : 0;
@@ -1403,6 +1539,16 @@ function App() {
       return null;
     }
 
+    if (!builtInFeatures.backendIntelliSense) {
+      return {
+        languageId: activeTab.language,
+        providerType: 'extension-disabled',
+        available: false,
+        statusLabel: 'IntelliSense: disabled',
+        detail: 'Remote IntelliSense Bridge is disabled in Extensions.',
+      };
+    }
+
     const description = describeLanguageIntelliSense(editorCapabilities, activeTab.language);
     if (!description) {
       return null;
@@ -1451,7 +1597,7 @@ function App() {
     }
 
     return description;
-  }, [activeTab?.language, editorCapabilities, editorCapabilitiesStatus, lspBridgeState]);
+  }, [activeTab?.language, builtInFeatures.backendIntelliSense, editorCapabilities, editorCapabilitiesStatus, lspBridgeState]);
   const activeIntelliSenseProviderType = activeIntelliSense?.providerType || '';
   const activeIntelliSenseAvailable = Boolean(activeIntelliSense?.available);
 
@@ -1912,12 +2058,20 @@ function App() {
   }
 
   function handleGoToLine() {
+    if (!builtInFeatures.quickNavigation) {
+      notifyExtensionDisabled('Quick Navigation');
+      return;
+    }
     const currentLine = editorStatus.line || 1;
     const currentColumn = editorStatus.column || 1;
     openGoOverlay('line', `${currentLine}:${currentColumn}`);
   }
 
   function handleGoToFile() {
+    if (!builtInFeatures.quickNavigation) {
+      notifyExtensionDisabled('Quick Navigation');
+      return;
+    }
     if (activePanel === 'search') {
       closeGoOverlay();
       openSearchPanel({ mode: 'files', query: '', scope: 'workspace' });
@@ -1928,6 +2082,10 @@ function App() {
   }
 
   function handleGoToSymbolInWorkspace() {
+    if (!builtInFeatures.quickNavigation) {
+      notifyExtensionDisabled('Quick Navigation');
+      return;
+    }
     if (activePanel === 'search') {
       closeGoOverlay();
       openSearchPanel({ mode: 'symbols', query: '', scope: 'workspace' });
@@ -1938,6 +2096,10 @@ function App() {
   }
 
   function handleGoToSymbolInEditor() {
+    if (!builtInFeatures.quickNavigation) {
+      notifyExtensionDisabled('Quick Navigation');
+      return;
+    }
     if (activePanel === 'search') {
       closeGoOverlay();
       openSearchPanel({ mode: 'symbols', query: '', scope: 'open' });
@@ -1948,11 +2110,19 @@ function App() {
   }
 
   function handleGoToDefinition() {
+    if (!builtInFeatures.quickNavigation) {
+      notifyExtensionDisabled('Quick Navigation');
+      return;
+    }
     closeGoOverlay();
     runEditorAction('editor.action.revealDefinition');
   }
 
   function handleGoToReferences() {
+    if (!builtInFeatures.quickNavigation) {
+      notifyExtensionDisabled('Quick Navigation');
+      return;
+    }
     closeGoOverlay();
     runEditorAction('editor.action.goToReferences');
   }
@@ -2047,6 +2217,10 @@ function App() {
   }
 
   function openSplitLivePreview() {
+    if (!builtInFeatures.livePreview) {
+      notifyExtensionDisabled('Live Preview Canvas');
+      return;
+    }
     if (activeTab?.language !== 'html') {
       return;
     }
@@ -2060,6 +2234,10 @@ function App() {
   }
 
   function openTabLivePreview() {
+    if (!builtInFeatures.livePreview) {
+      notifyExtensionDisabled('Live Preview Canvas');
+      return false;
+    }
     if (activeTab?.language !== 'html') {
       return false;
     }
@@ -2245,7 +2423,9 @@ function App() {
   async function handleOpenFolder() {
     try {
       await workspace.openFolderBrowser();
-      setActivePanel('filepioneer');
+      if (builtInFeatures.explorer) {
+        setActivePanel('filepioneer');
+      }
       pushNotification(`Opened folder ${workspace.rootName || 'workspace'}.`);
       refresh();
     } catch {
@@ -2312,6 +2492,10 @@ function App() {
   }
 
   async function handleCreateFolder() {
+    if (!builtInFeatures.explorer) {
+      notifyExtensionDisabled('Workspace Explorer');
+      return;
+    }
     setActivePanel('filepioneer');
     workspace.setSelectedNode(getCreateParentPath());
     setCreateFolderRequestNonce((current) => current + 1);
@@ -2419,14 +2603,34 @@ function App() {
   }
 
   function toggleSidebarPanel(panel) {
+    if (!isPanelAvailable(panel)) {
+      const featureName =
+        panel === 'filepioneer'
+          ? 'Workspace Explorer'
+          : panel === 'search'
+            ? 'Search Navigator'
+            : panel === 'git'
+              ? 'Source Control Deck'
+              : panel === 'github'
+                ? 'GitHub Workspace Link'
+                : panel === 'debug'
+                  ? 'Run & Debug Studio'
+                  : 'This panel';
+      notifyExtensionDisabled(featureName);
+      return;
+    }
     setActivePanel((current) => (current === panel ? null : panel));
   }
 
   function toggleSidebar() {
-    setActivePanel((current) => (current ? null : 'filepioneer'));
+    setActivePanel((current) => (current ? null : firstAvailableSidebarPanel() || DEFAULT_SIDEBAR_PANEL));
   }
 
   function handleRenameSelected() {
+    if (!builtInFeatures.explorer) {
+      notifyExtensionDisabled('Workspace Explorer');
+      return;
+    }
     const selectedPath = workspace.selectedNodePath;
     if (!selectedPath || selectedPath === 'root') {
       return;
@@ -2436,6 +2640,10 @@ function App() {
   }
 
   function handleStartDebugging() {
+    if (!builtInFeatures.runDebug) {
+      notifyExtensionDisabled('Run & Debug Studio');
+      return;
+    }
     setActivePanel('debug');
     setDebugSession({
       status: 'running',
@@ -2448,6 +2656,10 @@ function App() {
   }
 
   function handleRunWithoutDebugging() {
+    if (!builtInFeatures.runDebug) {
+      notifyExtensionDisabled('Run & Debug Studio');
+      return;
+    }
     setActivePanel('debug');
     setDebugSession({
       status: 'running',
@@ -2618,10 +2830,10 @@ function App() {
     'workbench.action.showExtensions': () => openExtensions(),
     'workbench.action.openAccount': () => openAccount(),
     'workbench.action.toggleSidebarVisibility': () => toggleSidebar(),
-    'workbench.view.explorer': () => setActivePanel('filepioneer'),
+    'workbench.view.explorer': () => toggleSidebarPanel('filepioneer'),
     'workbench.view.search': () => openSearchPanel(),
-    'workbench.view.scm': () => setActivePanel('git'),
-    'workbench.view.debug': () => setActivePanel('debug'),
+    'workbench.view.scm': () => toggleSidebarPanel('git'),
+    'workbench.view.debug': () => toggleSidebarPanel('debug'),
     'workbench.action.togglePanel': () => toggleTerminalPanel(),
     'workbench.action.terminal.toggleTerminal': () => toggleTerminalPanel(),
     'codeRunner.runFile': () => handleRunCurrentFile(),
@@ -2728,7 +2940,7 @@ function App() {
     setCustomKeybindings({});
   }
 
-  const panelDisplay = (panel) => (activePanel === panel ? 'flex' : 'none');
+  const panelDisplay = (panel) => (activePanel === panel && isPanelAvailable(panel) ? 'flex' : 'none');
   const showWelcomePage = !activeTab && welcomeTabOpen;
   const showDefaultPage = !activeTab && !welcomeTabOpen;
 
@@ -2751,7 +2963,12 @@ function App() {
       <Info triggerInfoClose={triggerInfoClose} InfoDisplay={infoDisplay} />
       <Modal isOpen={modalOpen} closeModal={closeCurrentModal} title={modalType}>
         <Settings modalType={modalType} settings={settings} setSettings={setSettings} />
-        <Extensions modalType={modalType} />
+         <Extensions
+          modalType={modalType}
+          pushNotification={pushNotification}
+          extensionCatalog={extensionCatalog}
+          marketplacePublishers={marketplacePublishers}
+         />
         <Account
           modalType={modalType}
           authSession={authSession}
@@ -2799,10 +3016,10 @@ function App() {
           selectAll={() => runEditorAction('editor.action.selectAll', () => document.execCommand('selectAll'))}
           find={() => runEditorAction('actions.find')}
           replace={() => runEditorAction('editor.action.startFindReplaceAction')}
-          openExplorer={() => setActivePanel('filepioneer')}
+          openExplorer={() => toggleSidebarPanel('filepioneer')}
           openSearch={openSearchPanel}
-          openSourceControl={() => setActivePanel('git')}
-          openDebug={() => setActivePanel('debug')}
+          openSourceControl={() => toggleSidebarPanel('git')}
+          openDebug={() => toggleSidebarPanel('debug')}
           goToFile={handleGoToFile}
           goToLine={handleGoToLine}
           goToSymbolInWorkspace={handleGoToSymbolInWorkspace}
@@ -2931,7 +3148,6 @@ function App() {
               authSession={authSession}
               pushNotification={pushNotification}
             />
-            <Extensions ariaExpandedisplayextensions={panelDisplay('extensions')} />
             <GitHub
               ariaExpandedisplaygithub={panelDisplay('github')}
               authSession={authSession}
@@ -2987,8 +3203,18 @@ function App() {
               confirmDelete={handleDeleteRequest}
             />
             <SideBar
+              showExplorer={builtInFeatures.explorer}
+              showSearch={builtInFeatures.search}
+              showExtensions={true}
+              showDebug={builtInFeatures.runDebug}
+              showGit={builtInFeatures.sourceControl}
+              showGitHub={builtInFeatures.githubConnect}
               toggleAriaExpandedfilepioneer={() => toggleSidebarPanel('filepioneer')}
               toggleAriaExpandedsearch={() => {
+                if (!builtInFeatures.search) {
+                  notifyExtensionDisabled('Search Navigator');
+                  return;
+                }
                 setActivePanel((current) => (current === 'search' ? null : 'search'));
                 setSearchFocusNonce((current) => current + 1);
               }}

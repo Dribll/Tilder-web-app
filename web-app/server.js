@@ -11,6 +11,12 @@ import { Server } from 'socket.io';
 import * as pty from 'node-pty';
 import simpleGit from 'simple-git';
 import { runLocalFile, runWorkspaceFile, syncWorkspaceMirror } from './localRunner.js';
+import {
+  createMarketplaceSubmission,
+  listMarketplaceSubmissions,
+  listPublicMarketplace,
+  reviewMarketplaceSubmission,
+} from './server/extensionsMarketplace.js';
 import { createLspBroker } from './server/lsp/broker.js';
 import { getAllEditorLanguages, getLspAdapter, NATIVE_EDITOR_LANGUAGES } from './server/lsp/registry.js';
 
@@ -78,6 +84,12 @@ const oauthStates = new Map();
 const desktopAuthSessions = new Map();
 const remoteWorkspaceSessions = new Map();
 const remoteWorkspaceSessionTtlMs = 1000 * 60 * 60;
+const extensionAdminIdentities = new Set(
+  String(process.env.TILDER_EXTENSION_ADMINS || '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+);
 
 const providerConfig = {
   github: {
@@ -695,6 +707,53 @@ function sanitizeSession(session) {
   };
 }
 
+function getExtensionActor(session) {
+  const github = sanitizeAccount(session?.accounts?.github);
+  if (github) {
+    return {
+      id: github.id,
+      username: github.username,
+      displayName: github.displayName,
+      email: github.email,
+      provider: 'github',
+    };
+  }
+
+  const microsoft = sanitizeAccount(session?.accounts?.microsoft);
+  if (microsoft) {
+    return {
+      id: microsoft.id,
+      username: microsoft.username,
+      displayName: microsoft.displayName,
+      email: microsoft.email,
+      provider: 'microsoft',
+    };
+  }
+
+  return {
+    id: '',
+    username: '',
+    displayName: '',
+    email: '',
+    provider: '',
+  };
+}
+
+function isExtensionAdmin(request) {
+  if (getRuntimeMode(request) === 'desktop-local') {
+    return true;
+  }
+
+  if (!extensionAdminIdentities.size) {
+    return false;
+  }
+
+  const actor = getExtensionActor(request.session);
+  return [actor.username, actor.email, actor.displayName]
+    .filter(Boolean)
+    .some((value) => extensionAdminIdentities.has(String(value).trim().toLowerCase()));
+}
+
 async function readSyncStore() {
   try {
     const raw = await fs.readFile(syncStorePath, 'utf8');
@@ -1250,6 +1309,72 @@ app.get('/api/editor/capabilities', async (request, response) => {
   } catch (error) {
     response.status(500).json({
       message: error instanceof Error ? error.message : 'Unable to load editor capabilities.',
+    });
+  }
+});
+
+app.get('/api/extensions/marketplace', async (_request, response) => {
+  try {
+    response.json(await listPublicMarketplace(dataDir));
+  } catch (error) {
+    response.status(500).json({
+      message: error instanceof Error ? error.message : 'Unable to load the extension marketplace.',
+    });
+  }
+});
+
+app.post('/api/extensions/submissions', async (request, response) => {
+  try {
+    const submission = await createMarketplaceSubmission(dataDir, request.body || {}, getExtensionActor(request.session));
+    response.status(201).json({
+      ok: true,
+      submission,
+      message: 'Extension submission received and is now waiting for review.',
+    });
+  } catch (error) {
+    response.status(400).json({
+      message: error instanceof Error ? error.message : 'Unable to create extension submission.',
+    });
+  }
+});
+
+app.get('/api/extensions/submissions', async (request, response) => {
+  if (!isExtensionAdmin(request)) {
+    response.status(403).json({ message: 'Extension review access is restricted to Tilder admins.' });
+    return;
+  }
+
+  try {
+    response.json({
+      submissions: await listMarketplaceSubmissions(dataDir),
+    });
+  } catch (error) {
+    response.status(500).json({
+      message: error instanceof Error ? error.message : 'Unable to load extension submissions.',
+    });
+  }
+});
+
+app.post('/api/extensions/submissions/:submissionId/review', async (request, response) => {
+  if (!isExtensionAdmin(request)) {
+    response.status(403).json({ message: 'Extension review access is restricted to Tilder admins.' });
+    return;
+  }
+
+  try {
+    const submission = await reviewMarketplaceSubmission(
+      dataDir,
+      request.params.submissionId,
+      request.body || {},
+      getExtensionActor(request.session)
+    );
+    response.json({
+      ok: true,
+      submission,
+    });
+  } catch (error) {
+    response.status(400).json({
+      message: error instanceof Error ? error.message : 'Unable to review extension submission.',
     });
   }
 });

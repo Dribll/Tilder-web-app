@@ -22,6 +22,7 @@ const VOID_HTML_TAGS = new Set([
 let linkedHtmlTagProviderRegistered = false;
 let emmetRegistered = false;
 let embeddedCssProviderRegistered = false;
+let embeddedJavaScriptProviderRegistered = false;
 let embeddedCssPropertiesCache = null;
 const lspCompletionRegistrations = new Map();
 const FALLBACK_LANGUAGE_COMPLETIONS = {
@@ -50,6 +51,26 @@ const FALLBACK_LANGUAGE_COMPLETIONS = {
     { label: 'class', kind: 'snippet', insertText: 'class ${1:Name}:\n\tdef __init__(self${2:, args}):\n\t\t$0', detail: 'Class definition' },
     { label: 'ifmain', kind: 'snippet', insertText: 'if __name__ == "__main__":\n\t$0', detail: 'Entry point guard' },
     { label: 'for', kind: 'snippet', insertText: 'for ${1:item} in ${2:items}:\n\t$0', detail: 'For loop' },
+  ],
+  javascript: [
+    { label: 'const', kind: 'keyword', insertText: 'const ${1:name} = ${2:value};$0', detail: 'Const declaration' },
+    { label: 'let', kind: 'keyword', insertText: 'let ${1:name} = ${2:value};$0', detail: 'Let declaration' },
+    { label: 'function', kind: 'snippet', insertText: 'function ${1:name}(${2:args}) {\n\t$0\n}', detail: 'Function declaration' },
+    { label: 'if', kind: 'snippet', insertText: 'if (${1:condition}) {\n\t$0\n}', detail: 'If statement' },
+    { label: 'for', kind: 'snippet', insertText: 'for (let ${1:i} = 0; ${1:i} < ${2:length}; ${1:i}++) {\n\t$0\n}', detail: 'For loop' },
+    { label: 'console.log', kind: 'function', insertText: 'console.log(${1:value});$0', detail: 'Console log' },
+    { label: 'document.querySelector', kind: 'function', insertText: "document.querySelector('${1:selector}')$0", detail: 'Select first DOM node' },
+    { label: 'addEventListener', kind: 'function', insertText: "addEventListener('${1:event}', (${2:event}) => {\n\t$0\n});", detail: 'Event listener' },
+    { label: 'return', kind: 'keyword', insertText: 'return ${1:value};$0', detail: 'Return statement' },
+    { label: 'async', kind: 'snippet', insertText: 'async function ${1:name}(${2:args}) {\n\t$0\n}', detail: 'Async function' },
+    { label: 'await', kind: 'keyword', insertText: 'await ${1:expression}$0', detail: 'Await expression' },
+  ],
+  typescript: [
+    { label: 'const', kind: 'keyword', insertText: 'const ${1:name}: ${2:type} = ${3:value};$0', detail: 'Typed const declaration' },
+    { label: 'interface', kind: 'snippet', insertText: 'interface ${1:Name} {\n\t$0\n}', detail: 'Interface declaration' },
+    { label: 'type', kind: 'snippet', insertText: 'type ${1:Name} = ${2:Value};$0', detail: 'Type alias' },
+    { label: 'function', kind: 'snippet', insertText: 'function ${1:name}(${2:args}): ${3:void} {\n\t$0\n}', detail: 'Function declaration' },
+    { label: 'console.log', kind: 'function', insertText: 'console.log(${1:value});$0', detail: 'Console log' },
   ],
   java: [
     { label: 'main', kind: 'snippet', insertText: 'public static void main(String[] args) {\n\t$0\n}', detail: 'Main method' },
@@ -208,6 +229,18 @@ function getTriggerCharacter(model, position) {
   return /[.:>#"'/]/.test(previousCharacter) ? previousCharacter : undefined;
 }
 
+function shouldUseManualSuggestTrigger(providerType) {
+  return providerType === 'lsp' || providerType === 'basic';
+}
+
+function isUserTypingSuggestTrigger(text) {
+  if (typeof text !== 'string' || text.length !== 1) {
+    return false;
+  }
+
+  return /[A-Za-z0-9_:#./"'(-]/.test(text);
+}
+
 function offsetToRange(model, startOffset, endOffset) {
   const start = model.getPositionAt(startOffset);
   const end = model.getPositionAt(endOffset);
@@ -308,18 +341,46 @@ function getIndentUnit(tab, settings) {
   return insertSpaces ? ' '.repeat(tabSize) : '\t';
 }
 
+function getHtmlTextBeforePosition(model, position) {
+  return model.getValueInRange({
+    startLineNumber: 1,
+    startColumn: 1,
+    endLineNumber: position.lineNumber,
+    endColumn: position.column,
+  });
+}
+
+function isInsideHtmlTagBlock(model, position, tagName) {
+  const textBeforeCursor = getHtmlTextBeforePosition(model, position).toLowerCase();
+  const openTagPattern = `<${tagName}`;
+  const closeTagPattern = `</${tagName}`;
+  const lastOpen = textBeforeCursor.lastIndexOf(openTagPattern);
+  const lastClose = textBeforeCursor.lastIndexOf(closeTagPattern);
+  return lastOpen !== -1 && lastOpen > lastClose;
+}
+
 function isInsideHtmlStyleBlock(model, position) {
+  return isInsideHtmlTagBlock(model, position, 'style');
+}
+
+function isInsideHtmlScriptBlock(model, position) {
+  return isInsideHtmlTagBlock(model, position, 'script');
+}
+
+function isInsideHtmlEmbeddedText(model, position, tagName) {
+  if (!isInsideHtmlTagBlock(model, position, tagName)) {
+    return false;
+  }
+
   const textBeforeCursor = model.getValueInRange({
     startLineNumber: 1,
     startColumn: 1,
     endLineNumber: position.lineNumber,
     endColumn: position.column,
-  }).toLowerCase();
-
-  const lastOpenStyle = textBeforeCursor.lastIndexOf('<style');
-  const lastCloseStyle = textBeforeCursor.lastIndexOf('</style');
-
-  return lastOpenStyle !== -1 && lastOpenStyle > lastCloseStyle;
+  });
+  const lastOpenBracket = textBeforeCursor.lastIndexOf('>');
+  const lastTagStart = textBeforeCursor.lastIndexOf(`<${tagName}`);
+  return lastTagStart !== -1 && lastOpenBracket > lastTagStart;
 }
 
 function handleHtmlStyleBlockEnter(editor, monaco, tab, settings) {
@@ -500,6 +561,38 @@ function registerEmbeddedCssProvider(monaco) {
   embeddedCssProviderRegistered = true;
 }
 
+function registerEmbeddedJavaScriptProvider(monaco) {
+  if (embeddedJavaScriptProviderRegistered) {
+    return;
+  }
+
+  monaco.languages.registerCompletionItemProvider('html', {
+    triggerCharacters: ['.', '(', '"', "'", '['],
+    provideCompletionItems(model, position) {
+      if (!isInsideHtmlEmbeddedText(model, position, 'script')) {
+        return { suggestions: [] };
+      }
+
+      const word = model.getWordUntilPosition(position);
+      const range = {
+        startLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endLineNumber: position.lineNumber,
+        endColumn: word.endColumn,
+      };
+
+      return {
+        suggestions: buildFallbackCompletionItems(monaco, 'javascript', range).map((item, index) => ({
+          ...item,
+          sortText: `aj-${String(index).padStart(4, '0')}`,
+        })),
+      };
+    },
+  });
+
+  embeddedJavaScriptProviderRegistered = true;
+}
+
 function registerEmmetProviders(monaco) {
   if (emmetRegistered) {
     return;
@@ -579,6 +672,7 @@ export default function MonacoEditor({
     registerEmmetProviders(monaco);
     registerHtmlLinkedTagProvider(monaco);
     registerEmbeddedCssProvider(monaco);
+    registerEmbeddedJavaScriptProvider(monaco);
     registerLspCompletionProvider(monaco, tab.language, () => activeLspContextRef.current);
 
     monaco.editor.defineTheme('tilder-night', {
@@ -651,12 +745,12 @@ export default function MonacoEditor({
         return;
       }
 
-      const shouldTriggerSuggest = event.changes.some((change) => {
-        if (!change.text) {
-          return false;
-        }
+      if (!shouldUseManualSuggestTrigger(nextIntelliSense.providerType)) {
+        return;
+      }
 
-        return /[A-Za-z0-9_:#.<>/"'(-]/.test(change.text);
+      const shouldTriggerSuggest = event.changes.some((change) => {
+        return isUserTypingSuggestTrigger(change.text);
       });
 
       if (!shouldTriggerSuggest) {
@@ -728,7 +822,7 @@ export default function MonacoEditor({
           },
           suggestSelection: 'first',
           snippetSuggestions: 'bottom',
-          acceptSuggestionOnEnter: 'on',
+          acceptSuggestionOnEnter: 'smart',
           acceptSuggestionOnCommitCharacter: true,
           tabCompletion: 'on',
           parameterHints: {
