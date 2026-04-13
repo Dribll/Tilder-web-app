@@ -1,6 +1,0 @@
-{
-  "identifier": "default",
-  "description": "Default desktop capability set for the main Tilder window.",
-  "windows": ["main"],
-  "permissions": ["core:default"]
-}
