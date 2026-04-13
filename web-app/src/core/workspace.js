@@ -101,6 +101,53 @@ function isBinaryFileName(name = '') {
   ].includes(extension);
 }
 
+function extensionFromName(name = '') {
+  const normalized = String(name || '').trim().toLowerCase();
+  const index = normalized.lastIndexOf('.');
+  return index === -1 ? '' : normalized.slice(index + 1);
+}
+
+function inferBinaryMimeType(name = '') {
+  const extension = extensionFromName(name);
+  const map = {
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    webm: 'video/webm',
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    avi: 'video/x-msvideo',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+    ico: 'image/x-icon',
+    pdf: 'application/pdf',
+  };
+  return map[extension] || 'application/octet-stream';
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value = '') {
+  const normalized = String(value || '').replace(/\s+/g, '');
+  const binary = atob(normalized);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
 function shouldSkipSyncPath(nodePath = '', options = {}) {
   const normalized = String(nodePath || '')
     .replace(/^root\/?/, '')
@@ -270,7 +317,7 @@ const workspace = {
 
           if (content == null && !isBinaryFileName(node.name)) {
             try {
-              content = await this.readFile(node);
+              content = (await this.readFile(node)).content;
             } catch {
               content = '';
             }
@@ -595,14 +642,32 @@ const workspace = {
   async readFile(node) {
     await this.verifyPermission(node.handle, false);
     const file = await node.handle.getFile();
-    return file.text();
+    if (isBinaryFileName(file.name)) {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      return {
+        content: bytesToBase64(bytes),
+        isBinary: true,
+        mimeType: inferBinaryMimeType(file.name),
+      };
+    }
+
+    return {
+      content: await file.text(),
+      isBinary: false,
+      mimeType: 'text/plain',
+    };
   },
 
   async openExternalFile() {
     const [handle] = await window.showOpenFilePicker();
     await this.verifyPermission(handle, true);
     const file = await handle.getFile();
-    const content = await file.text();
+    const binary = isBinaryFileName(file.name);
+    const content = binary
+      ? bytesToBase64(new Uint8Array(await file.arrayBuffer()))
+      : await file.text();
+    const mimeType = binary ? inferBinaryMimeType(file.name) : 'text/plain';
 
     if (!this.rootHandle) {
       const root = this.ensureDraftRoot();
@@ -620,6 +685,8 @@ const workspace = {
           parentPath: root.path,
           isDraft: true,
           content,
+          isBinary: binary,
+          mimeType,
         };
         root.children.push(node);
         root.open = true;
@@ -635,11 +702,13 @@ const workspace = {
         existingDraftTab.handle = handle;
         existingDraftTab.content = content;
         existingDraftTab.savedContent = content;
-        existingDraftTab.language = this.getLanguage(node.name);
+        existingDraftTab.language = binary ? 'plaintext' : this.getLanguage(node.name);
         existingDraftTab.dirty = false;
         existingDraftTab.external = false;
         existingDraftTab.isUntitled = false;
         existingDraftTab.isDraft = true;
+        existingDraftTab.isBinary = binary;
+        existingDraftTab.mimeType = mimeType;
         this.activeTabId = existingDraftTab.id;
         this.selectedNodePath = node.path;
         return existingDraftTab;
@@ -655,8 +724,10 @@ const workspace = {
         handle,
         content,
         savedContent: content,
-        language: this.getLanguage(node.name),
+        language: binary ? 'plaintext' : this.getLanguage(node.name),
         dirty: false,
+        isBinary: binary,
+        mimeType,
       };
 
       this.tabs.push(tab);
@@ -674,6 +745,8 @@ const workspace = {
       existing.handle = handle;
       existing.isUntitled = false;
       existing.isDraft = false;
+      existing.isBinary = binary;
+      existing.mimeType = mimeType;
       this.activeTabId = existing.id;
       this.selectedNodePath = null;
       return existing;
@@ -689,8 +762,10 @@ const workspace = {
       handle,
       content,
       savedContent: content,
-      language: this.getLanguage(handle.name),
+      language: binary ? 'plaintext' : this.getLanguage(handle.name),
       dirty: false,
+      isBinary: binary,
+      mimeType,
     };
 
     this.tabs.push(tab);
@@ -713,19 +788,27 @@ const workspace = {
       return existing;
     }
 
-    const content = node.isDraft ? node.content || '' : await this.readFile(node);
+    const filePayload = node.isDraft
+      ? {
+          content: node.content || '',
+          isBinary: !!node.isBinary,
+          mimeType: node.mimeType || inferBinaryMimeType(node.name),
+        }
+      : await this.readFile(node);
     const tab = {
       id: node.path,
       path: node.path,
       name: node.name,
       handle: node.handle || null,
-      content,
-      savedContent: content,
-      language: this.getLanguage(node.name),
+      content: filePayload.content,
+      savedContent: filePayload.content,
+      language: filePayload.isBinary ? 'plaintext' : this.getLanguage(node.name),
       dirty: false,
       external: false,
       isUntitled: !!node.isDraft && !node.handle,
       isDraft: !!node.isDraft,
+      isBinary: !!filePayload.isBinary,
+      mimeType: filePayload.mimeType || 'application/octet-stream',
     };
 
     this.tabs.push(tab);
@@ -857,7 +940,11 @@ const workspace = {
 
     await this.verifyPermission(tab.handle, true);
     const writable = await tab.handle.createWritable();
-    await writable.write(tab.content ?? '');
+    if (tab.isBinary) {
+      await writable.write(base64ToBytes(tab.content ?? ''));
+    } else {
+      await writable.write(tab.content ?? '');
+    }
     await writable.close();
 
     tab.savedContent = tab.content ?? '';

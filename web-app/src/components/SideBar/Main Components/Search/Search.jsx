@@ -87,6 +87,7 @@ export default function Search({
     }
 
     if (!query.trim()) {
+      setLoading(false);
       setError('');
       setResults([]);
       setSummary({ files: 0, matches: 0 });
@@ -371,14 +372,14 @@ export default function Search({
 
           {query.trim() && !loading && !results.length ? <div className="search-empty-state">No matches found.</div> : null}
 
-          {results.map((result) => (
+          {(Array.isArray(results) ? results : []).map((result) => (
             <div key={result.path} className="search-result-card">
               <button type="button" className="search-result-file" onClick={() => openSearchResult(result)}>
                 <span className="search-result-name">{result.name}</span>
                 <span className="search-result-path">{result.path}</span>
               </button>
 
-              {mode === 'content' || mode === 'symbols' ? (
+              {(mode === 'content' || mode === 'symbols') && Array.isArray(result.matches) ? (
                 <div className="search-result-matches">
                   {result.matches.map((match, index) => (
                     <button

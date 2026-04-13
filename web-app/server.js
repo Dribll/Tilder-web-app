@@ -12,10 +12,17 @@ import * as pty from 'node-pty';
 import simpleGit from 'simple-git';
 import { runLocalFile, runWorkspaceFile, syncWorkspaceMirror } from './localRunner.js';
 import {
+  createMarketplacePublisher,
+  createMarketplacePublisherToken,
   createMarketplaceSubmission,
+  getMarketplacePublisher,
+  listMarketplaceOwnedPublishers,
   listMarketplaceSubmissions,
+  listMarketplacePublishers,
   listPublicMarketplace,
+  publishMarketplacePackage,
   reviewMarketplaceSubmission,
+  validateMarketplacePackage,
 } from './server/extensionsMarketplace.js';
 import { createLspBroker } from './server/lsp/broker.js';
 import { getAllEditorLanguages, getLspAdapter, NATIVE_EDITOR_LANGUAGES } from './server/lsp/registry.js';
@@ -84,6 +91,7 @@ const oauthStates = new Map();
 const desktopAuthSessions = new Map();
 const remoteWorkspaceSessions = new Map();
 const remoteWorkspaceSessionTtlMs = 1000 * 60 * 60;
+const extensionsAssetDir = path.join(dataDir, 'extensions-assets');
 const extensionAdminIdentities = new Set(
   String(process.env.TILDER_EXTENSION_ADMINS || '')
     .split(',')
@@ -754,6 +762,15 @@ function isExtensionAdmin(request) {
     .some((value) => extensionAdminIdentities.has(String(value).trim().toLowerCase()));
 }
 
+function getBearerToken(request) {
+  const header = String(request.get('authorization') || '').trim();
+  if (!header.toLowerCase().startsWith('bearer ')) {
+    return '';
+  }
+
+  return header.slice(7).trim();
+}
+
 async function readSyncStore() {
   try {
     const raw = await fs.readFile(syncStorePath, 'utf8');
@@ -1319,6 +1336,98 @@ app.get('/api/extensions/marketplace', async (_request, response) => {
   } catch (error) {
     response.status(500).json({
       message: error instanceof Error ? error.message : 'Unable to load the extension marketplace.',
+    });
+  }
+});
+
+app.get('/api/extensions/publishers', async (_request, response) => {
+  try {
+    response.json(await listMarketplacePublishers(dataDir));
+  } catch (error) {
+    response.status(500).json({
+      message: error instanceof Error ? error.message : 'Unable to load extension publishers.',
+    });
+  }
+});
+
+app.get('/api/extensions/publishers/me', async (request, response) => {
+  try {
+    response.json(await listMarketplaceOwnedPublishers(dataDir, getExtensionActor(request.session)));
+  } catch (error) {
+    response.status(500).json({
+      message: error instanceof Error ? error.message : 'Unable to load your publishers.',
+    });
+  }
+});
+
+app.get('/api/extensions/publishers/:publisherId', async (request, response) => {
+  try {
+    response.json(await getMarketplacePublisher(dataDir, request.params.publisherId));
+  } catch (error) {
+    response.status(404).json({
+      message: error instanceof Error ? error.message : 'Publisher not found.',
+    });
+  }
+});
+
+app.post('/api/extensions/publishers', async (request, response) => {
+  try {
+    const result = await createMarketplacePublisher(dataDir, request.body || {}, getExtensionActor(request.session));
+    response.status(201).json({
+      ok: true,
+      ...result,
+    });
+  } catch (error) {
+    response.status(400).json({
+      message: error instanceof Error ? error.message : 'Unable to create publisher.',
+    });
+  }
+});
+
+app.post('/api/extensions/publishers/:publisherId/tokens', async (request, response) => {
+  try {
+    const result = await createMarketplacePublisherToken(
+      dataDir,
+      request.params.publisherId,
+      request.body || {},
+      getExtensionActor(request.session),
+      isExtensionAdmin(request)
+    );
+    response.status(201).json({
+      ok: true,
+      ...result,
+    });
+  } catch (error) {
+    response.status(403).json({
+      message: error instanceof Error ? error.message : 'Unable to create publisher token.',
+    });
+  }
+});
+
+app.post('/api/extensions/packages/validate', async (request, response) => {
+  try {
+    const result = await validateMarketplacePackage(dataDir, request.body || {});
+    response.status(result.ok ? 200 : 400).json(result);
+  } catch (error) {
+    response.status(400).json({
+      message: error instanceof Error ? error.message : 'Unable to validate extension package.',
+    });
+  }
+});
+
+app.post('/api/extensions/publish', async (request, response) => {
+  try {
+    const result = await publishMarketplacePackage(dataDir, request.body || {}, getExtensionActor(request.session), {
+      token: getBearerToken(request),
+      adminBypass: isExtensionAdmin(request),
+    });
+    response.status(201).json({
+      ok: true,
+      ...result,
+    });
+  } catch (error) {
+    response.status(400).json({
+      message: error instanceof Error ? error.message : 'Unable to publish extension package.',
     });
   }
 });
@@ -2097,6 +2206,7 @@ lspNamespace.on('connection', async (socket) => {
   }
 });
 
+app.use('/extensions-assets', express.static(extensionsAssetDir));
 app.use(express.static(distPath));
 
 app.use((_request, response) => {

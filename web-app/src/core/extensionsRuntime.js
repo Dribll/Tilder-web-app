@@ -2,6 +2,7 @@ const runtimeState = {
   loaded: new Map(),
   styleNodes: new Map(),
   commandHandlers: new Map(),
+  completionItems: new Map(),
 };
 
 function extensionStorageKey(extensionId, key) {
@@ -11,6 +12,7 @@ function extensionStorageKey(extensionId, key) {
 function createApi(extension, options) {
   const styleKeys = new Set();
   const commandIds = new Set();
+  const completionKeys = new Set();
 
   const api = {
     manifest: extension,
@@ -84,6 +86,48 @@ function createApi(extension, options) {
         return handler(...args);
       },
     },
+    completions: {
+      register(languageId, items = []) {
+        const normalizedLanguageId = String(languageId || '').trim().toLowerCase();
+        if (!normalizedLanguageId) {
+          throw new Error('A language id is required to register extension completions.');
+        }
+
+        const normalizedItems = Array.isArray(items)
+          ? items
+              .filter((entry) => entry && typeof entry === 'object' && String(entry.label || '').trim())
+              .map((entry, index) => ({
+                label: String(entry.label || '').trim(),
+                insertText: String(entry.insertText || entry.label || '').trim() || String(entry.label || '').trim(),
+                detail: String(entry.detail || '').trim(),
+                documentation: String(entry.documentation || '').trim(),
+                kind: String(entry.kind || 'snippet').trim().toLowerCase(),
+                sortText: String(entry.sortText || `ext-${extension.id}-${String(index).padStart(4, '0')}`),
+                filterText: String(entry.filterText || entry.label || '').trim(),
+              }))
+          : [];
+
+        if (!runtimeState.completionItems.has(normalizedLanguageId)) {
+          runtimeState.completionItems.set(normalizedLanguageId, new Map());
+        }
+
+        runtimeState.completionItems.get(normalizedLanguageId).set(extension.id, normalizedItems);
+        completionKeys.add(normalizedLanguageId);
+
+        return () => {
+          const bucket = runtimeState.completionItems.get(normalizedLanguageId);
+          if (!bucket) {
+            return;
+          }
+
+          bucket.delete(extension.id);
+          if (!bucket.size) {
+            runtimeState.completionItems.delete(normalizedLanguageId);
+          }
+          completionKeys.delete(normalizedLanguageId);
+        };
+      },
+    },
     app: {
       getWorkspaceSnapshot: options.getWorkspaceSnapshot,
       getActiveTabSnapshot: options.getActiveTabSnapshot,
@@ -101,6 +145,17 @@ function createApi(extension, options) {
         }
       });
       commandIds.forEach((commandId) => runtimeState.commandHandlers.delete(commandId));
+      completionKeys.forEach((languageId) => {
+        const bucket = runtimeState.completionItems.get(languageId);
+        if (!bucket) {
+          return;
+        }
+
+        bucket.delete(extension.id);
+        if (!bucket.size) {
+          runtimeState.completionItems.delete(languageId);
+        }
+      });
     },
   };
 }
@@ -194,4 +249,18 @@ export async function syncExtensionsRuntime({ catalog, extensionState, pushNotif
 
 export function disposeExtensionsRuntime() {
   [...runtimeState.loaded.keys()].forEach((extensionId) => deactivateExtension(extensionId));
+}
+
+export function getExtensionCompletions(languageId) {
+  const normalizedLanguageId = String(languageId || '').trim().toLowerCase();
+  if (!normalizedLanguageId) {
+    return [];
+  }
+
+  const direct = runtimeState.completionItems.get(normalizedLanguageId);
+  if (!direct?.size) {
+    return [];
+  }
+
+  return [...direct.values()].flat();
 }

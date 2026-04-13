@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+.github
+.env
+.env.*
+src-tauri/target
+src-tauri/resources/app/.env
+tmp-server-out
+tmp-server-err
+data

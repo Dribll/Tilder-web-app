@@ -75,6 +75,9 @@ function MenuBar(props) {
                 <li>Output</li>
                 <li>Debug Console</li>
                 <li onClick={props.toggleTerminal}>Terminal</li>
+                <hr className="dropdowncontent-hr" />
+                <li onClick={props.splitEditorRight}>Split Editor Right</li>
+                <li onClick={props.closeSplitEditor}>Close Split Editor</li>
               </div>
             </div>
             <div className="dropdown">
@@ -148,6 +151,8 @@ MenuBar.defaultProps = {
   accountAvatarUrl: '',
   accountDisplayName: '',
   accountProvider: '',
+  splitEditorRight: () => {},
+  closeSplitEditor: () => {},
 };
 
 MenuBar.propTypes = {
@@ -160,4 +165,6 @@ MenuBar.propTypes = {
   accountAvatarUrl: PropTypes.string,
   accountDisplayName: PropTypes.string,
   accountProvider: PropTypes.string,
+  splitEditorRight: PropTypes.func,
+  closeSplitEditor: PropTypes.func,
 };

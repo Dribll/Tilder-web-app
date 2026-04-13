@@ -1,112 +1,184 @@
 # Tilder Extensions
 
-Tilder extensions are real code-based packages. The public marketplace is intended for reviewed and verified extensions, not raw one-click manifest imports from the UI.
+Tilder now has a real publisher + package + publish flow inspired by the VS Code extension workflow. The goal is:
 
-## Marketplace model
+- developers build extensions as code
+- publishers own extension identities
+- publishing uses tokens
+- public extensions go into the shared marketplace
 
-- public extensions are submitted for review
-- verified extensions are added to the shared marketplace catalog
-- every Tilder user can install verified public extensions from the Extensions modal
-- built-in Tilder workbench features are not marketplace extensions
+This is intentionally similar in spirit to the VS Code publishing flow documented here:
+[VS Code: Publishing Extensions](https://code.visualstudio.com/api/working-with-extensions/publishing-extension)
 
-## Contributor flow
+## Core model
 
-Contributors build a Tilder extension with:
+Tilder has three parts:
 
-- a manifest
-- an optional browser module entrypoint via `webEntrypoint`
+1. A publisher
+2. An extension package
+3. A marketplace publish step
 
-Then they submit the extension through the project review flow, such as a GitHub contribution or marketplace registry pull request. After verification, the extension can be published for everyone.
+Public extensions are served from the Tilder backend after publishing. Built-in Tilder workbench features are not marketplace extensions.
 
-## Private and custom extensions
+## Publisher flow
 
-Private extensions are still possible, but they are not meant to be added through a simple marketplace button inside the app.
+Create a publisher first:
 
-Typical private/custom flow:
+- `POST /api/extensions/publishers`
 
-- build the manifest and extension code
-- place or register it through your trusted admin/developer workflow
-- let Tilder load it from an approved location or catalog source
+Then create a publisher token:
 
-## Runtime model
+- `POST /api/extensions/publishers/:publisherId/tokens`
 
-Tilder extensions can be real browser-side extensions, not just metadata cards.
+Publisher tokens are used by the CLI when publishing, similar to how VS Code uses publisher access tokens.
 
-Supported runtime ideas:
+## Extension project structure
 
-- activate extensions in the browser with `activate(api)`
-- inject styles
-- show notifications
-- register extension-scoped commands
-- use extension-scoped storage
+Typical extension folder:
 
-## Manifest shape
+```text
+my-extension/
+  manifest.json
+  dist/
+    main.js
+  README.md
+```
 
-Example fields:
+The browser entrypoint lives in `webEntrypoint` inside `manifest.json`.
+
+## Example manifest
 
 ```json
 {
-  "id": "community.dribll.night-signal-theme",
-  "name": "Night Signal Theme",
-  "publisher": "Dribll Community",
-  "category": "Styling",
-  "summary": "A darker midnight-accent theme for Tilder.",
-  "description": "Night Signal Theme changes parts of the Tilder chrome through a small browser extension module.",
-  "tags": ["theme", "dark", "styling"],
+  "manifestVersion": 2,
+  "id": "sample.weather-tools",
+  "name": "Weather Tools",
+  "publisher": "Sample Publisher",
   "version": "1.0.0",
-  "rating": 4.9,
-  "downloads": "Community",
-  "iconClass": "fa-solid fa-moon",
-  "accent": "#5d85ff",
-  "permissions": ["styles", "notifications"],
-  "webEntrypoint": "/extensions/night-signal/main.js",
-  "website": "https://example.com/night-signal",
-  "repository": "https://github.com/example/night-signal"
+  "category": "Productivity",
+  "summary": "Weather-aware utilities for Tilder.",
+  "description": "Adds a few weather-focused helpers and notifications.",
+  "tags": ["weather", "productivity"],
+  "permissions": ["notifications"],
+  "iconClass": "fa-solid fa-cloud-sun",
+  "accent": "#7f86ff",
+  "webEntrypoint": "dist/main.js"
 }
 ```
 
-## Code entrypoint
-
-The `webEntrypoint` module should export `activate(api)`.
+## Example code entrypoint
 
 ```js
 export function activate(api) {
-  api.styles.mount(`
-    .statusBar {
-      box-shadow: inset 0 1px 0 rgba(93, 133, 255, 0.45);
-    }
-  `);
+  api.notifications.info('Weather Tools activated.');
 
-  api.notifications.info('Theme loaded.');
-
-  const disposeCommand = api.commands.register('hello', () => {
-    api.notifications.info('Hello from the extension runtime.');
+  const dispose = api.commands.register('hello', () => {
+    api.notifications.info('Hello from Weather Tools.');
   });
 
   return () => {
-    disposeCommand();
+    dispose();
   };
 }
 ```
 
-## API surface
+## Tilder CLI
+
+Tilder ships a lightweight author CLI:
+
+```bash
+npm run tilderx -- init ./my-extension
+npm run tilderx -- validate ./my-extension
+npm run tilderx -- package ./my-extension --publisher sample-publisher
+npm run tilderx -- publish ./my-extension --registry https://tilder-services.onrender.com --publisher sample-publisher --token TILDER_PAT
+```
+
+### Commands
+
+- `init`
+  - scaffolds a manifest, README, and browser entrypoint
+- `validate`
+  - checks the manifest and packaged files
+- `package`
+  - writes a `.tilder.json` package file
+- `publish`
+  - uploads the package to the Tilder marketplace backend
+
+## Marketplace API
+
+Public read routes:
+
+- `GET /api/extensions/marketplace`
+- `GET /api/extensions/publishers`
+- `GET /api/extensions/publishers/:publisherId`
+
+Author/publisher routes:
+
+- `POST /api/extensions/publishers`
+- `POST /api/extensions/publishers/:publisherId/tokens`
+- `POST /api/extensions/packages/validate`
+- `POST /api/extensions/publish`
+
+Review routes:
+
+- `POST /api/extensions/submissions`
+- `GET /api/extensions/submissions`
+- `POST /api/extensions/submissions/:submissionId/review`
+
+## Package format
+
+The CLI publishes a JSON package with:
+
+```json
+{
+  "packageVersion": 1,
+  "publisherId": "sample-publisher",
+  "manifest": {
+    "id": "sample.weather-tools",
+    "name": "Weather Tools",
+    "version": "1.0.0",
+    "webEntrypoint": "dist/main.js"
+  },
+  "files": [
+    {
+      "path": "dist/main.js",
+      "encoding": "base64",
+      "content": "ZXhwb3J0IGZ1bmN0aW9uIGFjdGl2YXRlKCkgey4uLn0="
+    }
+  ]
+}
+```
+
+When published:
+
+- the backend stores the files under `data/extensions-assets/...`
+- marketplace entries point to the hosted asset URLs
+- every Tilder user can install the public package
+
+## Runtime surface
+
+Extensions currently run in the browser runtime and can use:
 
 - `api.manifest`
-- `api.storage.get(key, fallback)`
-- `api.storage.set(key, value)`
-- `api.storage.remove(key)`
-- `api.notifications.info(message)`
-- `api.notifications.warning(message)`
-- `api.notifications.error(message)`
-- `api.styles.mount(cssText, key?)`
-- `api.styles.unmount(key?)`
-- `api.commands.register(commandId, handler)`
-- `api.commands.execute(commandId, ...args)`
+- `api.storage.get/set/remove`
+- `api.notifications.info/warning/error`
+- `api.styles.mount/unmount`
+- `api.commands.register/execute`
 - `api.app.getWorkspaceSnapshot()`
 - `api.app.getActiveTabSnapshot()`
 
+## Recommended publishing workflow
+
+1. Create a publisher
+2. Generate a publisher token
+3. Build your extension locally
+4. Validate it with `tilderx`
+5. Publish it with the token
+6. Optionally submit it for marketplace review if you want curated/verified placement
+
 ## Notes
 
-- verified public extensions belong in the marketplace
-- private extensions belong in your trusted developer/admin flow
-- Tilder currently runs web extensions in the browser, so extension authors should keep modules lightweight and front-end safe
+- Publishers can own multiple extensions
+- Tokens should be treated like secrets
+- Public marketplace publishing is code-based, not a simple manifest upload button
+- Verified / curated marketplace review can still happen on top of the raw publish flow

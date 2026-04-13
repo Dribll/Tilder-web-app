@@ -9,6 +9,7 @@
     "dev:api": "node server.js",
     "start": "node server.js",
     "terminal-bridge": "node terminal-bridge.js",
+    "tilderx": "node scripts/tilderx.mjs",
     "build:desktop": "npm run build && node scripts/prepare-tauri-runtime.mjs",
     "sync:snippets": "node scripts/sync-friendly-snippets.mjs",
     "sync:completions": "node scripts/sync-monaco-completions.mjs",

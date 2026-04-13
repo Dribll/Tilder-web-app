@@ -10,6 +10,151 @@ function slugify(value) {
     .replace(/^-+|-+$/g, '');
 }
 
+function clampByte(value) {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function hexToRgb(hex) {
+  const normalized = String(hex || '').trim().replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) {
+    return { r: 127, g: 134, b: 255 };
+  }
+  return {
+    r: parseInt(normalized.slice(0, 2), 16),
+    g: parseInt(normalized.slice(2, 4), 16),
+    b: parseInt(normalized.slice(4, 6), 16),
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  return `#${[r, g, b]
+    .map((channel) => clampByte(channel).toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+function mixHex(baseHex, targetHex, ratio = 0.5) {
+  const base = hexToRgb(baseHex);
+  const target = hexToRgb(targetHex);
+  const nextRatio = Math.max(0, Math.min(1, ratio));
+  return rgbToHex({
+    r: base.r + (target.r - base.r) * nextRatio,
+    g: base.g + (target.g - base.g) * nextRatio,
+    b: base.b + (target.b - base.b) * nextRatio,
+  });
+}
+
+function getMonogram(name) {
+  const words = String(name || '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const initials = words.slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+  return initials || 'T';
+}
+
+function getLogoMotif(category = '') {
+  const lower = String(category || '').toLowerCase();
+  if (lower.includes('frontend') || lower.includes('styling')) return 'brackets';
+  if (lower.includes('backend') || lower.includes('devops')) return 'stack';
+  if (lower.includes('database') || lower.includes('data')) return 'cylinder';
+  if (lower.includes('api')) return 'pulse';
+  if (lower.includes('preview')) return 'eye';
+  if (lower.includes('lint')) return 'shield';
+  if (lower.includes('tool') || lower.includes('productivity')) return 'spark';
+  if (lower.includes('source control')) return 'branch';
+  return 'core';
+}
+
+function buildExtensionLogoDataUri({ id, name, category, accent }) {
+  const safeAccent = String(accent || '#7f86ff').trim();
+  const motif = getLogoMotif(category);
+  const hash = String(id || name || category || 'tilder').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const motifShift = (hash % 3) - 1;
+
+  const motifMarkup = (() => {
+    switch (motif) {
+      case 'brackets':
+        return `
+          <g fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M58 52 L40 64 L58 76"/>
+            <path d="M70 52 L88 64 L70 76"/>
+            <path d="M64 46 L64 82"/>
+          </g>
+        `;
+      case 'stack':
+        return `
+          <g fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M38 50h52"/>
+            <path d="M34 64h60"/>
+            <path d="M40 78h48"/>
+          </g>
+        `;
+      case 'cylinder':
+        return `
+          <g fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="64" cy="46" rx="20" ry="8"/>
+            <path d="M44 46v28c0 4 9 8 20 8s20-4 20-8V46"/>
+            <path d="M44 60c0 4 9 8 20 8s20-4 20-8"/>
+          </g>
+        `;
+      case 'pulse':
+        return `
+          <g fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M28 66h14l9-18 12 36 10-18h17"/>
+            <circle cx="28" cy="66" r="4" fill="rgba(255,255,255,0.96)" stroke="none"/>
+            <circle cx="90" cy="66" r="4" fill="rgba(255,255,255,0.96)" stroke="none"/>
+          </g>
+        `;
+      case 'eye':
+        return `
+          <g fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 64c8-14 22-22 44-22s36 8 44 22c-8 14-22 22-44 22S28 78 20 64z"/>
+            <circle cx="64" cy="64" r="10" fill="rgba(255,255,255,0.96)" stroke="none"/>
+          </g>
+        `;
+      case 'shield':
+        return `
+          <path d="M64 28 88 38v18c0 16-9 28-24 35-15-7-24-19-24-35V38z" fill="${safeAccent}"/>
+          <path d="M64 46 72 54 64 68 56 54z" fill="rgba(255,255,255,0.94)"/>
+        `;
+      case 'branch':
+        return `
+          <g fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M38 36v30c0 12 8 20 20 20h12"/>
+            <circle cx="38" cy="36" r="5" fill="rgba(255,255,255,0.96)" stroke="none"/>
+            <circle cx="38" cy="66" r="5" fill="rgba(255,255,255,0.96)" stroke="none"/>
+            <circle cx="76" cy="86" r="5" fill="rgba(255,255,255,0.96)" stroke="none"/>
+            <path d="M58 52c10 0 18-8 18-18"/>
+          </g>
+        `;
+      case 'spark':
+        return `
+          <path d="M64 28 72 50 94 58 72 66 64 88 56 66 34 58 56 50z" fill="rgba(255,255,255,0.96)"/>
+        `;
+      default:
+        return `
+          <g fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M40 46h18"/>
+            <path d="M70 46h18"/>
+            <path d="M46 82h40"/>
+            <path d="M34 62h60"/>
+          </g>
+        `;
+    }
+  })();
+
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" role="img" aria-label="${name}">
+      <g transform="translate(${motifShift} ${-motifShift})">
+        ${motifMarkup}
+      </g>
+    </svg>
+  `;
+
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg.trim())}`;
+}
+
 const CATEGORY_META = {
   Featured: { iconClass: 'fa-solid fa-star', accent: '#7f86ff' },
   'Language Pack': { iconClass: 'fa-solid fa-code', accent: '#59d084' },
@@ -27,6 +172,41 @@ const CATEGORY_META = {
   Preview: { iconClass: 'fa-solid fa-eye', accent: '#b48fff' },
   Tooling: { iconClass: 'fa-solid fa-screwdriver-wrench', accent: '#d3a0ff' },
 };
+
+const TAG_ICON_META = [
+  { match: ['docker', 'container', 'containers'], iconClass: 'fa-brands fa-docker', accent: '#5fb3ff' },
+  { match: ['kubernetes', 'k8s', 'helm'], iconClass: 'fa-solid fa-dharmachakra', accent: '#66b6ff' },
+  { match: ['terraform', 'infra'], iconClass: 'fa-solid fa-mountain-city', accent: '#9f8dff' },
+  { match: ['graphql'], iconClass: 'fa-solid fa-circle-nodes', accent: '#ff7fd8' },
+  { match: ['openapi', 'swagger'], iconClass: 'fa-solid fa-file-circle-check', accent: '#71d8a8' },
+  { match: ['tailwind', 'css', 'scss', 'sass'], iconClass: 'fa-solid fa-wind', accent: '#75dcff' },
+  { match: ['react', 'frontend'], iconClass: 'fa-brands fa-react', accent: '#69dcff' },
+  { match: ['vue'], iconClass: 'fa-brands fa-vuejs', accent: '#69d79d' },
+  { match: ['angular'], iconClass: 'fa-brands fa-angular', accent: '#ff7b91' },
+  { match: ['node'], iconClass: 'fa-brands fa-node-js', accent: '#72d391' },
+  { match: ['python', 'fastapi'], iconClass: 'fa-brands fa-python', accent: '#ffd56f' },
+  { match: ['java', 'spring'], iconClass: 'fa-brands fa-java', accent: '#ff9f74' },
+  { match: ['dotnet', 'csharp'], iconClass: 'fa-solid fa-hashtag', accent: '#b793ff' },
+  { match: ['php', 'laravel'], iconClass: 'fa-brands fa-php', accent: '#93a0d8' },
+  { match: ['go', 'gopls'], iconClass: 'fa-solid fa-g', accent: '#7dd8ff' },
+  { match: ['rust', 'cargo'], iconClass: 'fa-brands fa-rust', accent: '#e2b899' },
+  { match: ['json', 'yaml', 'toml', 'xml', 'csv'], iconClass: 'fa-solid fa-file-code', accent: '#7ae3d2' },
+  { match: ['sql', 'database', 'mongo', 'redis', 'orm', 'schema'], iconClass: 'fa-solid fa-database', accent: '#8fbdff' },
+  { match: ['markdown', 'preview'], iconClass: 'fa-solid fa-eye', accent: '#b48fff' },
+  { match: ['git', 'source', 'branch'], iconClass: 'fa-solid fa-code-branch', accent: '#f48a57' },
+  { match: ['regex'], iconClass: 'fa-solid fa-asterisk', accent: '#d3a0ff' },
+  { match: ['todo', 'bookmarks', 'navigation'], iconClass: 'fa-solid fa-list-check', accent: '#f6d05b' },
+];
+
+function resolveVisualMeta(entry = {}) {
+  const categoryMeta = CATEGORY_META[entry.category] || CATEGORY_META.Productivity;
+  const tags = Array.isArray(entry.tags) ? entry.tags.map((tag) => String(tag || '').trim().toLowerCase()) : [];
+  const tagMeta = TAG_ICON_META.find(({ match }) => match.some((token) => tags.includes(token)));
+  return {
+    iconClass: entry.iconClass || tagMeta?.iconClass || categoryMeta.iconClass,
+    accent: entry.accent || tagMeta?.accent || categoryMeta.accent,
+  };
+}
 
 const BASE_EXTENSION_CATEGORIES = [
   'All',
@@ -48,7 +228,7 @@ const BASE_EXTENSION_CATEGORIES = [
 ];
 
 export function normalizeExtensionCatalogEntry(entry) {
-  const categoryMeta = CATEGORY_META[entry.category] || CATEGORY_META.Productivity;
+  const visualMeta = resolveVisualMeta(entry);
   const kind = entry.webEntrypoint ? 'code-extension' : 'feature-pack';
   const publisherId = entry.publisherId || slugify(entry.publisher || 'unknown-publisher');
   const reviewStatus = entry.reviewStatus || 'published';
@@ -56,8 +236,9 @@ export function normalizeExtensionCatalogEntry(entry) {
     entry.verification || (entry.source === 'community' ? 'community' : entry.publisherVerified === false ? 'community' : 'verified');
 
   return {
-    iconClass: entry.iconClass || categoryMeta.iconClass,
-    accent: entry.accent || categoryMeta.accent,
+    iconClass: visualMeta.iconClass,
+    accent: visualMeta.accent,
+    logoSrc: entry.logoSrc || entry.logoUrl || '',
     detailTitle: entry.detailTitle || entry.name,
     description:
       entry.description ||
@@ -79,6 +260,86 @@ export function normalizeExtensionCatalogEntry(entry) {
     ...entry,
   };
 }
+
+const DEFAULT_CODE_EXTENSION_OVERRIDES = {
+  'tilder.python-flow': {
+    webEntrypoint: '/extensions/python-flow/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.clang-flow': {
+    webEntrypoint: '/extensions/clang-flow/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.go-flow': {
+    webEntrypoint: '/extensions/go-flow/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.rust-flow': {
+    webEntrypoint: '/extensions/rust-flow/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.json-lab': {
+    webEntrypoint: '/extensions/json-lab/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.react-craft': {
+    webEntrypoint: '/extensions/react-craft/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.java-flow': {
+    webEntrypoint: '/extensions/java-flow/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.dotnet-flow': {
+    webEntrypoint: '/extensions/dotnet-flow/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.php-flow': {
+    webEntrypoint: '/extensions/php-flow/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.shell-flow': {
+    webEntrypoint: '/extensions/shell-flow/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.yaml-flow': {
+    webEntrypoint: '/extensions/yaml-flow/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.node-ops': {
+    webEntrypoint: '/extensions/node-ops/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.express-ops': {
+    webEntrypoint: '/extensions/express-ops/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.fastapi-ops': {
+    webEntrypoint: '/extensions/fastapi-ops/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.sql-flow': {
+    webEntrypoint: '/extensions/sql-flow/main.js',
+    permissions: ['completions'],
+  },
+  'tilder.tailwind-garden': {
+    webEntrypoint: '/extensions/tailwind-garden/main.js',
+    permissions: ['completions'],
+  },
+};
+
+const ADVANCED_DEFAULT_EXTENSION_IDS = new Set([
+  'tilder.java-flow',
+  'tilder.dotnet-flow',
+  'tilder.php-flow',
+  'tilder.shell-flow',
+  'tilder.yaml-flow',
+  'tilder.node-ops',
+  'tilder.express-ops',
+  'tilder.fastapi-ops',
+  'tilder.sql-flow',
+  'tilder.tailwind-garden',
+]);
 
 const catalogEntries = [
   ['tilder.web-format-kit', 'Web Format Kit', 'Formatting', 'Fast formatting defaults for web and config files.', '2.8M', 4.8, ['formatting', 'web']],
@@ -140,8 +401,9 @@ const catalogEntries = [
   ['tilder.redis-view', 'Redis View', 'Database', 'Redis command templates and cache-friendly notes.', '330K', 4.0, ['redis', 'database']],
   ['tilder.openapi-lens', 'OpenAPI Lens', 'API', 'OpenAPI and schema helpers for HTTP API projects.', '610K', 4.3, ['openapi', 'api']],
   ['tilder.swagger-preview', 'Swagger Preview', 'Preview', 'Preview-friendly helpers for generated API docs.', '350K', 4.1, ['swagger', 'preview']],
-].map(([id, name, category, summary, downloads, rating, tags]) =>
-  normalizeExtensionCatalogEntry({
+].map(([id, name, category, summary, downloads, rating, tags]) => {
+  const shortId = id.replace('tilder.', '');
+  return normalizeExtensionCatalogEntry({
     id,
     name,
     publisher: 'Dribll',
@@ -151,11 +413,28 @@ const catalogEntries = [
     rating,
     tags,
     version: '1.0.0',
-    defaultInstalled: tags.includes('react') || tags.includes('python') || tags.includes('c') || tags.includes('go') || tags.includes('rust') || tags.includes('json'),
-    defaultEnabled: tags.includes('react') || tags.includes('python') || tags.includes('c') || tags.includes('go') || tags.includes('rust') || tags.includes('json'),
+    defaultInstalled:
+      tags.includes('react') ||
+      tags.includes('python') ||
+      tags.includes('c') ||
+      tags.includes('go') ||
+      tags.includes('rust') ||
+      tags.includes('json') ||
+      ADVANCED_DEFAULT_EXTENSION_IDS.has(id),
+    defaultEnabled:
+      tags.includes('react') ||
+      tags.includes('python') ||
+      tags.includes('c') ||
+      tags.includes('go') ||
+      tags.includes('rust') ||
+      tags.includes('json') ||
+      ADVANCED_DEFAULT_EXTENSION_IDS.has(id),
     featured: ['tilder.web-format-kit', 'tilder.code-guard', 'tilder.react-craft', 'tilder.python-flow', 'tilder.clang-flow'].includes(id),
-  })
-);
+    webEntrypoint: `/extensions/${shortId}/main.js`,
+    permissions: ['completions'],
+    ...(DEFAULT_CODE_EXTENSION_OVERRIDES[id] || {}),
+  });
+});
 
 export const DEFAULT_EXTENSION_CATALOG = [
   ...catalogEntries,

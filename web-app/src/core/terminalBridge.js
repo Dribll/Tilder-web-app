@@ -76,7 +76,8 @@ async function readNodeContent(workspace, node) {
     return node.content || '';
   }
 
-  return workspace.readFile(node);
+  const payload = await workspace.readFile(node);
+  return payload?.isBinary ? '[binary file]' : payload?.content || '';
 }
 
 export function getTerminalMode() {

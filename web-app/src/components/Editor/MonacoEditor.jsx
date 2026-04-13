@@ -1,6 +1,7 @@
 import React from 'react';
 import { Editor } from '@monaco-editor/react';
 import { emmetCSS, emmetHTML, emmetJSX } from 'emmet-monaco-es';
+import { getExtensionCompletions } from '../../core/extensionsRuntime.js';
 
 const VOID_HTML_TAGS = new Set([
   'area',
@@ -25,6 +26,7 @@ let embeddedCssProviderRegistered = false;
 let embeddedJavaScriptProviderRegistered = false;
 let embeddedCssPropertiesCache = null;
 const lspCompletionRegistrations = new Map();
+const extensionCompletionRegistrations = new Map();
 const FALLBACK_LANGUAGE_COMPLETIONS = {
   c: [
     { label: 'main', kind: 'snippet', insertText: 'int main(void) {\n\t$0\n\treturn 0;\n}', detail: 'Main function' },
@@ -218,6 +220,23 @@ function buildFallbackCompletionItems(monaco, languageId, range) {
     detail: item.detail || '',
     filterText: item.label,
     sortText: `zz-${String(index).padStart(4, '0')}`,
+    range,
+  }));
+}
+
+function buildExtensionCompletionItems(monaco, languageId, range) {
+  return getExtensionCompletions(languageId).map((item, index) => ({
+    label: item.label,
+    kind: toFallbackCompletionKind(monaco, item.kind),
+    insertText: item.insertText,
+    insertTextRules:
+      item.kind === 'snippet'
+        ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+        : monaco.languages.CompletionItemInsertTextRule.None,
+    detail: item.detail || '',
+    documentation: item.documentation || '',
+    filterText: item.filterText || item.label,
+    sortText: item.sortText || `zy-ext-${String(index).padStart(4, '0')}`,
     range,
   }));
 }
@@ -635,13 +654,19 @@ function registerLspCompletionProvider(monaco, languageId, getLspContext) {
         };
 
         const suggestions = toMonacoCompletionItems(monaco, response, range);
+        const extensionSuggestions = buildExtensionCompletionItems(monaco, languageId, range);
         return {
           suggestions: suggestions.length
-            ? [...suggestions, ...buildFallbackCompletionItems(monaco, languageId, range)]
-            : buildFallbackCompletionItems(monaco, languageId, range),
+            ? [...suggestions, ...extensionSuggestions, ...buildFallbackCompletionItems(monaco, languageId, range)]
+            : [...extensionSuggestions, ...buildFallbackCompletionItems(monaco, languageId, range)],
         };
       } catch {
-        return { suggestions: buildFallbackCompletionItems(monaco, languageId, range) };
+        return {
+          suggestions: [
+            ...buildExtensionCompletionItems(monaco, languageId, range),
+            ...buildFallbackCompletionItems(monaco, languageId, range),
+          ],
+        };
       }
     },
   });
@@ -649,11 +674,57 @@ function registerLspCompletionProvider(monaco, languageId, getLspContext) {
   lspCompletionRegistrations.set(languageId, disposable);
 }
 
+function registerExtensionCompletionProvider(monaco, languageId) {
+  if (!languageId || extensionCompletionRegistrations.has(languageId)) {
+    return;
+  }
+
+  const disposable = monaco.languages.registerCompletionItemProvider(languageId, {
+    triggerCharacters: ['.', ':', '>', '"', "'", '/', '#', '(', '<', ' '],
+    provideCompletionItems(model, position) {
+      const word = model.getWordUntilPosition(position);
+      const range = {
+        startLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endLineNumber: position.lineNumber,
+        endColumn: word.endColumn,
+      };
+
+      return {
+        suggestions: buildExtensionCompletionItems(monaco, languageId, range),
+      };
+    },
+  });
+
+  extensionCompletionRegistrations.set(languageId, disposable);
+}
+
+function classifyBinaryTab(tab) {
+  if (!tab?.isBinary) {
+    return 'text';
+  }
+  const mimeType = String(tab.mimeType || '').toLowerCase();
+  if (mimeType.startsWith('image/')) {
+    return 'image';
+  }
+  if (mimeType.startsWith('audio/')) {
+    return 'audio';
+  }
+  if (mimeType.startsWith('video/')) {
+    return 'video';
+  }
+  if (mimeType === 'application/pdf') {
+    return 'pdf';
+  }
+  return 'binary';
+}
+
 export default function MonacoEditor({
   settings,
   tab,
   onChange,
   onMount,
+  onFocusEditor,
   MonacoEditorDisplay,
   monacoEditorStyle,
   onOpenCommandPalette,
@@ -663,10 +734,25 @@ export default function MonacoEditor({
 }) {
   const activeLspContextRef = React.useRef(null);
   const activeIntelliSenseRef = React.useRef(intelliSense);
+  const [binaryViewMode, setBinaryViewMode] = React.useState('preview');
 
   if (!settings || !tab) {
     return null;
   }
+
+  const binaryKind = classifyBinaryTab(tab);
+  const isBinaryTab = binaryKind !== 'text';
+  const canPreviewBinary = binaryKind === 'image' || binaryKind === 'pdf' || binaryKind === 'audio' || binaryKind === 'video';
+  const binaryPreviewUrl = React.useMemo(() => {
+    if (!isBinaryTab || !canPreviewBinary || !tab.content) {
+      return '';
+    }
+    return `data:${tab.mimeType || 'application/octet-stream'};base64,${tab.content}`;
+  }, [canPreviewBinary, isBinaryTab, tab.content, tab.mimeType]);
+
+  React.useEffect(() => {
+    setBinaryViewMode(canPreviewBinary ? 'preview' : 'raw');
+  }, [tab.id, canPreviewBinary]);
 
   function handleMount(editor, monaco) {
     registerEmmetProviders(monaco);
@@ -674,6 +760,7 @@ export default function MonacoEditor({
     registerEmbeddedCssProvider(monaco);
     registerEmbeddedJavaScriptProvider(monaco);
     registerLspCompletionProvider(monaco, tab.language, () => activeLspContextRef.current);
+    registerExtensionCompletionProvider(monaco, tab.language);
 
     monaco.editor.defineTheme('tilder-night', {
       base: 'vs-dark',
@@ -762,6 +849,10 @@ export default function MonacoEditor({
       }, 0);
     });
 
+    editor.onDidFocusEditorText(() => {
+      onFocusEditor?.(editor, monaco, tab);
+    });
+
     onMount?.(editor, monaco);
   }
 
@@ -791,52 +882,104 @@ export default function MonacoEditor({
         : false;
 
   return (
-    <div id="editor-wrapper" style={monacoEditorStyle} className={`d-${MonacoEditorDisplay}`}>
-      <Editor
-        height="100%"
-        theme="tilder-night"
-        language={tab.language}
-        value={tab.content}
-        onChange={onChange}
-        onMount={handleMount}
-        options={{
-          ...settings,
-          tabSize: tab.tabSize ?? settings.tabSize,
-          insertSpaces: tab.insertSpaces ?? settings.insertSpaces,
-          automaticLayout: true,
-          glyphMargin: true,
-          autoIndent: 'full',
-          suggestOnTriggerCharacters: true,
-          quickSuggestionsDelay: 0,
-          quickSuggestions: {
-            other: true,
-            comments: false,
-            strings: true,
-          },
-          suggest: {
-            selectionMode: 'always',
-            snippetsPreventQuickSuggestions: false,
-            showWords: true,
-            showSnippets: true,
-            localityBonus: true,
-          },
-          suggestSelection: 'first',
-          snippetSuggestions: 'bottom',
-          acceptSuggestionOnEnter: 'smart',
-          acceptSuggestionOnCommitCharacter: true,
-          tabCompletion: 'on',
-          parameterHints: {
-            enabled: true,
-          },
-          linkedEditing: true,
-          autoClosingBrackets: 'languageDefined',
-          autoClosingQuotes: 'always',
-          autoClosingDelete: 'always',
-          autoClosingComments: 'always',
-          autoSurround: 'languageDefined',
-          wordBasedSuggestions,
-        }}
-      />
+    <div className={`editor-wrapper d-${MonacoEditorDisplay}`} style={monacoEditorStyle}>
+      {isBinaryTab ? (
+        <div className="binary-editor-surface">
+          <div className="binary-editor-toolbar">
+            <span className="binary-editor-label">Binary file</span>
+            <button
+              type="button"
+              className={`binary-editor-tab ${binaryViewMode === 'preview' ? 'active' : ''}`}
+              disabled={!canPreviewBinary}
+              onClick={() => setBinaryViewMode('preview')}
+            >
+              Preview
+            </button>
+            <button
+              type="button"
+              className={`binary-editor-tab ${binaryViewMode === 'raw' ? 'active' : ''}`}
+              onClick={() => setBinaryViewMode('raw')}
+            >
+              Raw binary (base64)
+            </button>
+          </div>
+          {binaryViewMode === 'preview' && canPreviewBinary ? (
+            <div className="binary-preview-container">
+              {binaryKind === 'image' ? (
+                <img src={binaryPreviewUrl} alt={tab.name || 'image preview'} className="binary-preview-image" />
+              ) : binaryKind === 'audio' ? (
+                <audio controls src={binaryPreviewUrl} className="binary-preview-audio" />
+              ) : binaryKind === 'video' ? (
+                <video controls src={binaryPreviewUrl} className="binary-preview-video" />
+              ) : (
+                <iframe title={tab.name || 'PDF preview'} src={binaryPreviewUrl} className="binary-preview-pdf" />
+              )}
+            </div>
+          ) : (
+            <Editor
+              height="100%"
+              theme="tilder-night"
+              language="plaintext"
+              value={tab.content}
+              onChange={onChange}
+              onMount={handleMount}
+              options={{
+                ...settings,
+                automaticLayout: true,
+                glyphMargin: false,
+                wordWrap: 'on',
+                minimap: { enabled: false },
+              }}
+            />
+          )}
+        </div>
+      ) : (
+        <Editor
+          height="100%"
+          theme="tilder-night"
+          language={tab.language}
+          value={tab.content}
+          onChange={onChange}
+          onMount={handleMount}
+          options={{
+            ...settings,
+            tabSize: tab.tabSize ?? settings.tabSize,
+            insertSpaces: tab.insertSpaces ?? settings.insertSpaces,
+            automaticLayout: true,
+            glyphMargin: true,
+            autoIndent: 'full',
+            suggestOnTriggerCharacters: true,
+            quickSuggestionsDelay: 0,
+            quickSuggestions: {
+              other: true,
+              comments: false,
+              strings: true,
+            },
+            suggest: {
+              selectionMode: 'always',
+              snippetsPreventQuickSuggestions: false,
+              showWords: true,
+              showSnippets: true,
+              localityBonus: true,
+            },
+            suggestSelection: 'first',
+            snippetSuggestions: 'bottom',
+            acceptSuggestionOnEnter: 'smart',
+            acceptSuggestionOnCommitCharacter: true,
+            tabCompletion: 'on',
+            parameterHints: {
+              enabled: true,
+            },
+            linkedEditing: true,
+            autoClosingBrackets: 'languageDefined',
+            autoClosingQuotes: 'always',
+            autoClosingDelete: 'always',
+            autoClosingComments: 'always',
+            autoSurround: 'languageDefined',
+            wordBasedSuggestions,
+          }}
+        />
+      )}
     </div>
   );
 }

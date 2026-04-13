@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import MenuBar from './components/MenuBar/MenuBar.jsx';
 import SideBar from './components/SideBar/SideBar.jsx';
@@ -83,6 +83,39 @@ const BUILT_IN_FEATURES = {
 const AVAILABLE_SIDEBAR_PANELS = ['filepioneer', 'search', 'git', 'github', 'debug'];
 
 const DEFAULT_SIDEBAR_PANEL = 'filepioneer';
+
+function getMonacoActionBindingLabel(editor, actionId) {
+  try {
+    return editor?._standaloneKeybindingService?.lookupKeybinding?.(actionId)?.getLabel?.() || '';
+  } catch {
+    return '';
+  }
+}
+
+function collectMonacoCommandPaletteCommands(editor) {
+  if (!editor?.getSupportedActions) {
+    return [];
+  }
+
+  const actions = editor.getSupportedActions();
+  if (!Array.isArray(actions)) {
+    return [];
+  }
+
+  return actions
+    .filter((action) => {
+      const label = action?.label || action?.alias || '';
+      return typeof action?.id === 'string' && label.trim();
+    })
+    .map((action) => ({
+      id: action.id,
+      label: action.label || action.alias,
+      category: 'Editor',
+      keywords: [action.alias, action.label, action.id].filter(Boolean),
+      bindingLabel: getMonacoActionBindingLabel(editor, action.id),
+      source: 'monaco',
+    }));
+}
 
 function App() {
   const [settings, setSettings] = useState(() => {
@@ -176,6 +209,20 @@ function App() {
   const [livePreviewNonce, setLivePreviewNonce] = useState(0);
   const [livePreviewWidth, setLivePreviewWidth] = useState(380);
   const [isResizingLivePreview, setIsResizingLivePreview] = useState(false);
+  const [splitEditorOpen, setSplitEditorOpen] = useState(false);
+  const [splitPaneGroups, setSplitPaneGroups] = useState([]);
+  const [focusedSplitPaneIndex, setFocusedSplitPaneIndex] = useState(0);
+  const [primaryGroupTabIds, setPrimaryGroupTabIds] = useState([]);
+  const [primaryActiveTabId, setPrimaryActiveTabId] = useState(null);
+  const [primaryPreviewTabId, setPrimaryPreviewTabId] = useState(null);
+  const [splitPaneWeights, setSplitPaneWeights] = useState([1]);
+  /** 'horizontal' = VS Code “split right” (side-by-side); 'vertical' = “split down” (stacked). */
+  const [editorSplitDirection, setEditorSplitDirection] = useState('horizontal');
+  const [isResizingEditorSplit, setIsResizingEditorSplit] = useState(false);
+  const [activeEditorPane, setActiveEditorPane] = useState('primary');
+  const [draggingTab, setDraggingTab] = useState(null);
+  const [pinnedTabIds, setPinnedTabIds] = useState({});
+  const closedEditorStackRef = useRef([]);
   const [authSession, setAuthSession] = useState(DEFAULT_AUTH_SESSION);
   const [authServiceStatus, setAuthServiceStatus] = useState('loading');
   const [authServiceMessage, setAuthServiceMessage] = useState('');
@@ -189,10 +236,14 @@ function App() {
   const [debugBreakpoints, setDebugBreakpoints] = useState({});
   const [watchExpressions, setWatchExpressions] = useState([]);
   const [debugDiagnostics, setDebugDiagnostics] = useState([]);
+  const [commandPaletteEditorNonce, setCommandPaletteEditorNonce] = useState(0);
   const saveTimersRef = useRef({});
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
   const editorListenersCleanupRef = useRef(() => {});
+  const splitEditorRefs = useRef(new Map());
+  const splitMonacoRefs = useRef(new Map());
+  const splitEditorListenersCleanupRef = useRef(new Map());
   const modalOpenRef = useRef(modalOpen);
   const modalTypeRef = useRef(modalType);
   const mainCodeAreaRef = useRef(null);
@@ -200,6 +251,7 @@ function App() {
   const terminalApiRef = useRef(null);
   const confirmationResolverRef = useRef(null);
   const breakpointDecorationsRef = useRef([]);
+  const splitBreakpointDecorationsRef = useRef(new Map());
   const livePreviewWindowRef = useRef(null);
   const livePreviewChannelRef = useRef(null);
   const syncPushTimerRef = useRef(null);
@@ -217,7 +269,14 @@ function App() {
   const lspBridgeRef = useRef(null);
   const [activeLspBridge, setActiveLspBridge] = useState(null);
   const goOverlayInputRef = useRef(null);
+  const activeEditorPaneRef = useRef('primary');
+  const editorSplitResizeRef = useRef({ index: 0, startX: 0, weights: [] });
+  const groupMruRef = useRef({ primary: [], splits: {} });
   const extensionCatalog = useMemo(() => buildExtensionCatalog(marketplaceCatalog), [marketplaceCatalog]);
+  const primaryActiveTabIdRef = useRef(primaryActiveTabId);
+  const splitEditorOpenMountRef = useRef(splitEditorOpen);
+  primaryActiveTabIdRef.current = primaryActiveTabId;
+  splitEditorOpenMountRef.current = splitEditorOpen;
 
   useEffect(() => {
     localStorage.setItem('editorSettings', JSON.stringify(settings));
@@ -314,6 +373,10 @@ function App() {
       setCommandPaletteOpen(false);
     }
   }, [modalOpen, modalType]);
+
+  useEffect(() => {
+    activeEditorPaneRef.current = activeEditorPane;
+  }, [activeEditorPane]);
 
   useEffect(() => {
     if (!goOverlay.open) {
@@ -1184,7 +1247,7 @@ function App() {
     });
   }
 
-  function updateDebugDiagnostics(editorInstance = editorRef.current, monacoInstance = monacoRef.current) {
+  function updateDebugDiagnostics(editorInstance = getPreferredEditor(), monacoInstance = getPreferredMonaco()) {
     const model = editorInstance?.getModel?.();
     if (!model || !monacoInstance) {
       setDebugDiagnostics([]);
@@ -1204,7 +1267,12 @@ function App() {
     setDebugDiagnostics(markers);
   }
 
-  function refreshBreakpointDecorations(editorInstance = editorRef.current, monacoInstance = monacoRef.current, tabId = workspace.activeTabId) {
+  function refreshBreakpointDecorations(
+    editorInstance = getPreferredEditor(),
+    monacoInstance = getPreferredMonaco(),
+    tabId = workspace.activeTabId,
+    decorationsRef = breakpointDecorationsRef
+  ) {
     const editor = editorInstance;
     const monaco = monacoInstance;
     const activeId = tabId;
@@ -1219,8 +1287,8 @@ function App() {
     }
 
     const lines = [...(debugBreakpoints[tab.path] || [])].sort((left, right) => left - right);
-    breakpointDecorationsRef.current = editor.deltaDecorations(
-      breakpointDecorationsRef.current,
+    decorationsRef.current = editor.deltaDecorations(
+      decorationsRef.current,
       lines.map((line) => ({
         range: new monaco.Range(line, 1, line, 1),
         options: {
@@ -1352,7 +1420,7 @@ function App() {
   }
 
   async function handleRunCurrentFile() {
-    const tab = workspace.getActiveTab();
+    const tab = getFocusedTab() || workspace.getActiveTab();
     if (!tab) {
       return;
     }
@@ -1471,6 +1539,7 @@ function App() {
       clearTimeout(syncPushTimerRef.current);
       clearTimeout(editorWorkspaceSyncTimerRef.current);
       editorListenersCleanupRef.current();
+      splitEditorListenersCleanupRef.current.forEach((cleanup) => cleanup?.());
       confirmationResolverRef.current?.(false);
       clearLivePreview();
       setLivePreviewDocument('');
@@ -1484,9 +1553,43 @@ function App() {
   const activeTab = workspace.getActiveTab();
   const welcomeTab = welcomeTabOpen ? [{ id: '__welcome__', name: 'Welcome', dirty: false }] : [];
   const visibleTabs = [...welcomeTab, ...tabs];
+  const primaryGroupTabs = primaryGroupTabIds
+    .map((id) => visibleTabs.find((tab) => tab.id === id))
+    .filter(Boolean);
+  function orderTabsForView(list = []) {
+    const pinned = [];
+    const regular = [];
+    list.forEach((tab) => {
+      if (pinnedTabIds[tab.id]) {
+        pinned.push({ ...tab, pinned: true });
+      } else {
+        regular.push({ ...tab, pinned: false });
+      }
+    });
+    return [...pinned, ...regular];
+  }
+  const primaryPaneEditorTab =
+    splitEditorOpen && primaryActiveTabId && primaryActiveTabId !== '__welcome__'
+      ? workspace.tabs.find((t) => t.id === primaryActiveTabId) || null
+      : !splitEditorOpen
+        ? activeTab
+        : null;
+  const splitPrimaryWelcomeOpen = splitEditorOpen && (primaryActiveTabId === '__welcome__' || (!primaryPaneEditorTab && welcomeTabOpen));
+  const splitPrimaryDefaultOpen = splitEditorOpen && !primaryPaneEditorTab && !welcomeTabOpen;
   const tabActiveId = activeTab ? workspace.activeTabId : (welcomeTabOpen ? '__welcome__' : null);
+  const focusedSplitGroup = splitPaneGroups[focusedSplitPaneIndex] || null;
+  const focusedSplitTab =
+    focusedSplitGroup?.activeTabId && focusedSplitGroup.activeTabId !== '__welcome__'
+      ? workspace.tabs.find((tab) => tab.id === focusedSplitGroup.activeTabId) || null
+      : null;
   const hasSidebar = Boolean(activePanel && isPanelAvailable(activePanel));
-  const showLivePreviewAction = builtInFeatures.livePreview && activeTab?.language === 'html';
+  const livePreviewContextTab =
+    splitEditorOpen && activeEditorPane === 'primary'
+      ? primaryPaneEditorTab
+      : splitEditorOpen && activeEditorPane === 'secondary'
+        ? focusedSplitTab
+        : activeTab;
+  const showLivePreviewAction = builtInFeatures.livePreview && livePreviewContextTab?.language === 'html';
   const previewColumnOpen = livePreviewOpen && livePreviewMode === 'split' && showLivePreviewAction;
   const editorSurfaceHeight = useMemo(() => {
     const terminalOffset = terminalOpen ? terminalHeight : 0;
@@ -1514,6 +1617,10 @@ function App() {
     () => ({ width: editorContentWidth, height: editorSurfaceHeight, opacity: '1' }),
     [editorContentWidth, editorSurfaceHeight]
   );
+  const splitMonacoEditorStyle = useMemo(
+    () => ({ width: '100%', height: editorSurfaceHeight, opacity: '1' }),
+    [editorSurfaceHeight]
+  );
   const contentSurfaceStyle = useMemo(
     () => ({ width: editorContentWidth, height: editorSurfaceHeight }),
     [editorContentWidth, editorSurfaceHeight]
@@ -1527,21 +1634,576 @@ function App() {
     [customKeybindings]
   );
   const commandPaletteCommands = useMemo(
-    () =>
-      KEYBINDING_COMMANDS.map((command) => ({
+    () => {
+      const baseCommands = KEYBINDING_COMMANDS.map((command) => ({
         ...command,
         bindingLabel: formatBindingLabel(effectiveBindings[command.id]),
-      })),
-    [effectiveBindings]
+      }));
+      const preferredEditor = getPreferredEditor();
+      const monacoCommands = collectMonacoCommandPaletteCommands(preferredEditor);
+      const merged = new Map();
+
+      baseCommands.forEach((command) => {
+        merged.set(command.id, command);
+      });
+
+      monacoCommands.forEach((command) => {
+        const existing = merged.get(command.id);
+        if (existing) {
+          merged.set(command.id, {
+            ...existing,
+            label: command.label || existing.label,
+            keywords: [...new Set([...(existing.keywords || []), ...(command.keywords || [])])],
+            bindingLabel: existing.bindingLabel || command.bindingLabel || '',
+          });
+          return;
+        }
+
+        merged.set(command.id, command);
+      });
+
+      return [...merged.values()];
+    },
+    [activeEditorPane, activeTab?.id, commandPaletteEditorNonce, effectiveBindings, focusedSplitPaneIndex, focusedSplitTab?.id, primaryActiveTabId, splitEditorOpen, version]
   );
+
+  function touchGroupMru(groupKey, tabId) {
+    if (!tabId || tabId === '__welcome__') {
+      return;
+    }
+    if (groupKey === 'primary') {
+      const bucket = groupMruRef.current.primary.filter((id) => id !== tabId);
+      bucket.unshift(tabId);
+      groupMruRef.current.primary = bucket.slice(0, 48);
+      return;
+    }
+    const prev = groupMruRef.current.splits[groupKey] || [];
+    const bucket = prev.filter((id) => id !== tabId);
+    bucket.unshift(tabId);
+    groupMruRef.current.splits[groupKey] = bucket.slice(0, 48);
+  }
+
+  function removeTabFromAllMru(tabId) {
+    groupMruRef.current.primary = groupMruRef.current.primary.filter((id) => id !== tabId);
+    Object.keys(groupMruRef.current.splits).forEach((k) => {
+      groupMruRef.current.splits[k] = (groupMruRef.current.splits[k] || []).filter((id) => id !== tabId);
+    });
+  }
+
+  function removeTabFromGroupMru(groupKey, tabId) {
+    if (groupKey === 'primary') {
+      groupMruRef.current.primary = groupMruRef.current.primary.filter((id) => id !== tabId);
+    } else if (groupMruRef.current.splits[groupKey]) {
+      groupMruRef.current.splits[groupKey] = groupMruRef.current.splits[groupKey].filter((id) => id !== tabId);
+    }
+  }
+
+  function isTabReferencedOutsideGroup(tabId, groupId) {
+    if (!tabId) {
+      return false;
+    }
+    if (groupId !== 'primary' && primaryGroupTabIds.includes(tabId)) {
+      return true;
+    }
+    return splitPaneGroups.some((group) => group.id !== groupId && group.tabIds.includes(tabId));
+  }
+
+  async function closeWorkspaceTabEntry(tabId, tab, { discardUntitled = false } = {}) {
+    if (discardUntitled && tab?.isUntitled) {
+      const draftNode = tab.path ? workspace.findNode(tab.path) : null;
+      if (draftNode?.isDraft) {
+        await workspace.deleteNode(draftNode.path);
+        return;
+      }
+    }
+
+    workspace.closeTab(tabId);
+  }
+
+  function resolveFocusedGroupForClose() {
+    if (!splitEditorOpen || activeEditorPane === 'primary') {
+      return 'primary';
+    }
+    return splitPaneGroups[focusedSplitPaneIndex]?.id ?? 'primary';
+  }
+
+  function pickNextActiveFromMru(tabIds, removedId, groupKey) {
+    const mru =
+      groupKey === 'primary'
+        ? groupMruRef.current.primary
+        : groupMruRef.current.splits[groupKey] || [];
+    for (const id of mru) {
+      if (id !== removedId && tabIds.includes(id)) {
+        return id;
+      }
+    }
+    return tabIds.find((id) => id !== '__welcome__') || tabIds[0] || null;
+  }
+
+  function forceCloseTabSilently(tabId, { skipClosedStack = true } = {}) {
+    if (!tabId || tabId === '__welcome__') {
+      return;
+    }
+    delete saveTimersRef.current[tabId];
+    const tab = workspace.tabs.find((entry) => entry.id === tabId);
+    if (!skipClosedStack && tab) {
+      closedEditorStackRef.current = [{ id: tab.id, path: tab.path, name: tab.name }, ...closedEditorStackRef.current].slice(0, 50);
+    }
+    setPinnedTabIds((current) => {
+      if (!current[tabId]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[tabId];
+      return next;
+    });
+    setPrimaryPreviewTabId((p) => (p === tabId ? null : p));
+    setPrimaryGroupTabIds((current) => current.filter((id) => id !== tabId));
+    setSplitPaneGroups((current) =>
+      current
+        .map((group) => {
+          const nextTabIds = group.tabIds.filter((paneId) => paneId !== tabId);
+          const nextPreview = group.previewTabId === tabId ? null : group.previewTabId;
+          const nextActive =
+            group.activeTabId === tabId
+              ? pickNextActiveFromMru(nextTabIds, tabId, group.id) ||
+                nextTabIds.find((paneId) => paneId !== '__welcome__') ||
+                nextTabIds[0] ||
+                null
+              : group.activeTabId;
+          if (!nextActive) {
+            return null;
+          }
+          return { ...group, tabIds: nextTabIds, activeTabId: nextActive, previewTabId: nextPreview };
+        })
+        .filter(Boolean)
+    );
+    removeTabFromAllMru(tabId);
+    workspace.closeTab(tabId);
+  }
+
+  function getDefaultSplitTabId() {
+    if (workspace.activeTabId) {
+      return workspace.activeTabId;
+    }
+
+    const firstTab = workspace.tabs[0];
+    return firstTab?.id || (welcomeTabOpen ? '__welcome__' : null);
+  }
+
+  function getPreferredEditor() {
+    if (activeEditorPaneRef.current === 'secondary') {
+      return splitEditorRefs.current.get(focusedSplitPaneIndex) || null;
+    }
+
+    return editorRef.current;
+  }
+
+  function getPreferredMonaco() {
+    if (activeEditorPaneRef.current === 'secondary') {
+      return splitMonacoRefs.current.get(focusedSplitPaneIndex) || null;
+    }
+
+    return monacoRef.current;
+  }
+
+  function getFocusedTab() {
+    if (splitEditorOpen && activeEditorPane === 'secondary' && focusedSplitTab) {
+      return focusedSplitTab;
+    }
+    if (splitEditorOpen && activeEditorPane === 'primary') {
+      if (primaryActiveTabId === '__welcome__') {
+        return null;
+      }
+      if (primaryActiveTabId) {
+        return workspace.tabs.find((t) => t.id === primaryActiveTabId) || workspace.getActiveTab();
+      }
+    }
+    return workspace.getActiveTab();
+  }
+
+  function openSplitEditorRight(tabId = null) {
+    const lastGroup = splitPaneGroups[splitPaneGroups.length - 1];
+    const nextTabId = tabId || lastGroup?.activeTabId || getDefaultSplitTabId();
+    if (!nextTabId) {
+      return;
+    }
+
+    setSplitEditorOpen(true);
+    setEditorSplitDirection('horizontal');
+    const newGroupId = `group-${Date.now()}-${splitPaneGroups.length}`;
+    const newGroup = {
+      id: newGroupId,
+      activeTabId: nextTabId,
+      tabIds: [nextTabId],
+      previewTabId: null,
+    };
+    setSplitPaneGroups((current) => {
+      const merged = [...current, newGroup];
+      setFocusedSplitPaneIndex(merged.length - 1);
+      return merged;
+    });
+    setActiveEditorPane('secondary');
+    if (nextTabId !== '__welcome__') {
+      workspace.setActiveTab(nextTabId);
+    } else {
+      workspace.activeTabId = null;
+    }
+    touchGroupMru(newGroupId, nextTabId);
+  }
+
+  /** VS Code workbench.action.splitEditorDown — new group below (column layout). */
+  function openSplitEditorDown(tabId = null) {
+    const lastGroup = splitPaneGroups[splitPaneGroups.length - 1];
+    const nextTabId = tabId || lastGroup?.activeTabId || getDefaultSplitTabId();
+    if (!nextTabId) {
+      return;
+    }
+
+    setSplitEditorOpen(true);
+    setEditorSplitDirection('vertical');
+    const newGroupId = `group-${Date.now()}-${splitPaneGroups.length}`;
+    const newGroup = {
+      id: newGroupId,
+      activeTabId: nextTabId,
+      tabIds: [nextTabId],
+      previewTabId: null,
+    };
+    setSplitPaneGroups((current) => {
+      const merged = [...current, newGroup];
+      setFocusedSplitPaneIndex(merged.length - 1);
+      return merged;
+    });
+    setActiveEditorPane('secondary');
+    if (nextTabId !== '__welcome__') {
+      workspace.setActiveTab(nextTabId);
+    } else {
+      workspace.activeTabId = null;
+    }
+    touchGroupMru(newGroupId, nextTabId);
+  }
+
+  function closeSplitEditor() {
+    setSplitEditorOpen(false);
+    setSplitPaneGroups([]);
+    setFocusedSplitPaneIndex(0);
+    setEditorSplitDirection('horizontal');
+    setActiveEditorPane('primary');
+  }
+
+  function assignTabToFocusedGroup(tabId, { preview = false } = {}) {
+    if (!tabId) {
+      return;
+    }
+
+    const focusedSecondary = splitEditorOpen && activeEditorPane === 'secondary';
+
+    // Preview only controls which tab shows the italic "preview" styling — do not close the
+    // previous preview in the workspace. Otherwise each new file from the explorer replaces the
+    // last tab and you never get multiple files stacked in a split (or primary) group.
+
+    if (focusedSecondary) {
+      const focusedGroupId = splitPaneGroups[focusedSplitPaneIndex]?.id;
+      setSplitPaneGroups((current) =>
+        current.map((group, index) => {
+          if (index !== focusedSplitPaneIndex) {
+            return group;
+          }
+          const nextIds = group.tabIds.includes(tabId) ? group.tabIds : [...group.tabIds, tabId];
+          const nextPreview = preview ? tabId : group.previewTabId === tabId ? null : group.previewTabId;
+          return { ...group, tabIds: nextIds, activeTabId: tabId, previewTabId: nextPreview };
+        })
+      );
+      if (tabId !== '__welcome__') {
+        workspace.setActiveTab(tabId);
+      } else {
+        workspace.activeTabId = null;
+      }
+      if (focusedGroupId) {
+        touchGroupMru(focusedGroupId, tabId);
+      }
+      return;
+    }
+
+    setPrimaryPreviewTabId((p) => {
+      if (preview) {
+        return tabId;
+      }
+      if (p === tabId) {
+        return null;
+      }
+      return p;
+    });
+    setPrimaryGroupTabIds((cur) => (cur.includes(tabId) ? cur : [...cur, tabId]));
+    setPrimaryActiveTabId(tabId);
+    if (tabId !== '__welcome__') {
+      workspace.setActiveTab(tabId);
+    } else {
+      workspace.activeTabId = null;
+    }
+    touchGroupMru('primary', tabId);
+  }
+
+  function assignTabToPrimaryGroup(tabId) {
+    if (!tabId) {
+      return;
+    }
+    setPrimaryGroupTabIds((current) => (current.includes(tabId) ? current : [...current, tabId]));
+  }
+
+  function focusNextSplitGroup() {
+    if (!splitPaneGroups.length) return;
+    const nextIndex = (focusedSplitPaneIndex + 1) % splitPaneGroups.length;
+    setFocusedSplitPaneIndex(nextIndex);
+    setActiveEditorPane('secondary');
+  }
+
+  function focusPreviousSplitGroup() {
+    if (!splitPaneGroups.length) return;
+    const nextIndex = (focusedSplitPaneIndex - 1 + splitPaneGroups.length) % splitPaneGroups.length;
+    setFocusedSplitPaneIndex(nextIndex);
+    setActiveEditorPane('secondary');
+  }
+
+  function closeFocusedSplitGroup() {
+    if (!splitPaneGroups.length) {
+      closeSplitEditor();
+      return;
+    }
+    setSplitPaneGroups((current) => {
+      const next = current.filter((_, index) => index !== focusedSplitPaneIndex);
+      if (!next.length) {
+        setSplitEditorOpen(false);
+        setFocusedSplitPaneIndex(0);
+        setActiveEditorPane('primary');
+        return [];
+      }
+      const nextIndex = Math.min(focusedSplitPaneIndex, next.length - 1);
+      setFocusedSplitPaneIndex(nextIndex);
+      return next;
+    });
+  }
+
+  function moveActiveEditorToAdjacentGroup(direction = 'next') {
+    if (!splitPaneGroups.length) return;
+    const source = splitPaneGroups[focusedSplitPaneIndex];
+    const tabId = source?.activeTabId;
+    if (!tabId || tabId === '__welcome__') return;
+    const targetIndex =
+      direction === 'previous'
+        ? (focusedSplitPaneIndex - 1 + splitPaneGroups.length) % splitPaneGroups.length
+        : (focusedSplitPaneIndex + 1) % splitPaneGroups.length;
+    setSplitPaneGroups((current) =>
+      current
+        .map((group, index) => {
+          if (index === focusedSplitPaneIndex) {
+            const nextTabIds = group.tabIds.filter((id) => id !== tabId);
+            const nextActive =
+              group.activeTabId === tabId
+                ? pickNextActiveFromMru(nextTabIds, tabId, group.id) || nextTabIds[0] || null
+                : group.activeTabId;
+            const nextPv = group.previewTabId === tabId ? null : group.previewTabId;
+            if (!nextActive) return null;
+            return { ...group, tabIds: nextTabIds, activeTabId: nextActive, previewTabId: nextPv };
+          }
+          if (index === targetIndex) {
+            const nextTabIds = group.tabIds.includes(tabId) ? group.tabIds : [...group.tabIds, tabId];
+            return {
+              ...group,
+              tabIds: nextTabIds,
+              activeTabId: tabId,
+              previewTabId: group.previewTabId === tabId ? group.previewTabId : null,
+            };
+          }
+          return group;
+        })
+        .filter((group) => group.activeTabId)
+    );
+    setFocusedSplitPaneIndex(targetIndex);
+    setActiveEditorPane('secondary');
+  }
+
+  function togglePinTab(tabId) {
+    if (!tabId) return;
+    setPinnedTabIds((current) => ({ ...current, [tabId]: !current[tabId] }));
+    setPrimaryPreviewTabId((p) => (p === tabId ? null : p));
+    setSplitPaneGroups((current) =>
+      current.map((group) => (group.previewTabId === tabId ? { ...group, previewTabId: null } : group))
+    );
+  }
+
+  function togglePinFocusedTab() {
+    const focused = getFocusedTab();
+    if (focused?.id) {
+      togglePinTab(focused.id);
+    }
+  }
+
+  function handleTabDragStart(tabId, sourceGroupId, sourceIndex = null) {
+    setDraggingTab({ tabId, sourceGroupId, sourceIndex });
+  }
+
+  function handleGroupTabDrop(targetGroupId, insertBeforeIndex = null) {
+    if (!draggingTab?.tabId || !targetGroupId) {
+      setDraggingTab(null);
+      return;
+    }
+    const { tabId, sourceGroupId, sourceIndex } = draggingTab;
+
+    if (sourceGroupId === targetGroupId && insertBeforeIndex != null && sourceIndex != null) {
+      if (targetGroupId === 'primary') {
+        setPrimaryGroupTabIds((cur) => {
+          const next = [...cur];
+          const [item] = next.splice(sourceIndex, 1);
+          let dest = insertBeforeIndex;
+          if (sourceIndex < insertBeforeIndex) {
+            dest -= 1;
+          }
+          next.splice(dest, 0, item);
+          return next;
+        });
+      } else {
+        setSplitPaneGroups((cur) =>
+          cur.map((group) => {
+            if (group.id !== targetGroupId) {
+              return group;
+            }
+            const next = [...group.tabIds];
+            const [item] = next.splice(sourceIndex, 1);
+            let dest = insertBeforeIndex;
+            if (sourceIndex < insertBeforeIndex) {
+              dest -= 1;
+            }
+            next.splice(dest, 0, item);
+            return { ...group, tabIds: next };
+          })
+        );
+      }
+      setDraggingTab(null);
+      return;
+    }
+
+    if (sourceGroupId === targetGroupId) {
+      setDraggingTab(null);
+      return;
+    }
+
+    setPrimaryPreviewTabId((p) => (p === tabId ? null : p));
+
+    if (targetGroupId === 'primary') {
+      setSplitPaneGroups((current) =>
+        current
+          .map((group) => {
+            const nextIds = group.tabIds.filter((id) => id !== tabId);
+            let nextActive = group.activeTabId;
+            if (group.activeTabId === tabId) {
+              nextActive =
+                pickNextActiveFromMru(nextIds, tabId, group.id) ||
+                nextIds.find((x) => x !== '__welcome__') ||
+                nextIds[0] ||
+                null;
+            }
+            const nextPv = group.previewTabId === tabId ? null : group.previewTabId;
+            if (!nextActive) {
+              return null;
+            }
+            return { ...group, tabIds: nextIds, activeTabId: nextActive, previewTabId: nextPv };
+          })
+          .filter(Boolean)
+      );
+      setPrimaryGroupTabIds((cur) => {
+        const base = cur.filter((id) => id !== tabId);
+        let next;
+        if (insertBeforeIndex == null || insertBeforeIndex >= base.length) {
+          next = [...base, tabId];
+        } else {
+          next = [...base];
+          next.splice(insertBeforeIndex, 0, tabId);
+        }
+        return next;
+      });
+      setPrimaryActiveTabId(tabId);
+      workspace.setActiveTab(tabId);
+      setActiveEditorPane('primary');
+      touchGroupMru('primary', tabId);
+      setDraggingTab(null);
+      return;
+    }
+
+    setPrimaryGroupTabIds((cur) => cur.filter((id) => id !== tabId));
+    let focusedIdx = focusedSplitPaneIndex;
+    setSplitPaneGroups((cur) => {
+      const mapped = cur
+        .map((group) => {
+          if (group.id === targetGroupId) {
+            const filtered = group.tabIds.filter((id) => id !== tabId);
+            let nextIds;
+            if (insertBeforeIndex == null || insertBeforeIndex >= filtered.length) {
+              nextIds = [...filtered, tabId];
+            } else {
+              nextIds = [...filtered];
+              nextIds.splice(insertBeforeIndex, 0, tabId);
+            }
+            return { ...group, tabIds: nextIds, activeTabId: tabId, previewTabId: group.previewTabId === tabId ? group.previewTabId : null };
+          }
+          const nextIds = group.tabIds.filter((id) => id !== tabId);
+          let nextActive = group.activeTabId;
+          if (group.activeTabId === tabId) {
+            nextActive =
+              pickNextActiveFromMru(nextIds, tabId, group.id) ||
+              nextIds.find((x) => x !== '__welcome__') ||
+              nextIds[0] ||
+              null;
+          }
+          const nextPv = group.previewTabId === tabId ? null : group.previewTabId;
+          if (!nextActive) {
+            return null;
+          }
+          return { ...group, tabIds: nextIds, activeTabId: nextActive, previewTabId: nextPv };
+        })
+        .filter(Boolean);
+      const ti = mapped.findIndex((g) => g.id === targetGroupId);
+      if (ti >= 0) {
+        focusedIdx = ti;
+      }
+      return mapped;
+    });
+    setFocusedSplitPaneIndex(focusedIdx);
+    workspace.setActiveTab(tabId);
+    setActiveEditorPane('secondary');
+    touchGroupMru(targetGroupId, tabId);
+    setDraggingTab(null);
+  }
+
+  function startEditorSplitResize(resizerIndex) {
+    return (event) => {
+      event.preventDefault();
+      editorSplitResizeRef.current = {
+        index: resizerIndex,
+        startX: event.clientX,
+        startY: event.clientY,
+        weights: [...splitPaneWeights],
+        axis: editorSplitDirection === 'vertical' ? 'y' : 'x',
+      };
+      setIsResizingEditorSplit(true);
+    };
+  }
+
+  const intelliSenseTargetTab =
+    splitEditorOpen && activeEditorPane === 'primary'
+      ? primaryPaneEditorTab
+      : splitEditorOpen && activeEditorPane === 'secondary'
+        ? focusedSplitTab
+        : activeTab;
+
   const activeIntelliSense = useMemo(() => {
-    if (!activeTab?.language) {
+    if (!intelliSenseTargetTab?.language) {
       return null;
     }
 
     if (!builtInFeatures.backendIntelliSense) {
       return {
-        languageId: activeTab.language,
+        languageId: intelliSenseTargetTab.language,
         providerType: 'extension-disabled',
         available: false,
         statusLabel: 'IntelliSense: disabled',
@@ -1549,7 +2211,7 @@ function App() {
       };
     }
 
-    const description = describeLanguageIntelliSense(editorCapabilities, activeTab.language);
+    const description = describeLanguageIntelliSense(editorCapabilities, intelliSenseTargetTab.language);
     if (!description) {
       return null;
     }
@@ -1565,7 +2227,7 @@ function App() {
     if (
       description.providerType === 'lsp' &&
       description.available &&
-      lspBridgeState.languageId === activeTab.language
+      lspBridgeState.languageId === intelliSenseTargetTab.language
     ) {
       if (lspBridgeState.status === 'connected') {
         return {
@@ -1597,7 +2259,13 @@ function App() {
     }
 
     return description;
-  }, [activeTab?.language, builtInFeatures.backendIntelliSense, editorCapabilities, editorCapabilitiesStatus, lspBridgeState]);
+  }, [
+    intelliSenseTargetTab?.language,
+    builtInFeatures.backendIntelliSense,
+    editorCapabilities,
+    editorCapabilitiesStatus,
+    lspBridgeState,
+  ]);
   const activeIntelliSenseProviderType = activeIntelliSense?.providerType || '';
   const activeIntelliSenseAvailable = Boolean(activeIntelliSense?.available);
 
@@ -1822,6 +2490,117 @@ function App() {
   }, [isResizingLivePreview]);
 
   useEffect(() => {
+    if (splitEditorOpen) {
+      return undefined;
+    }
+
+    splitEditorListenersCleanupRef.current.forEach((cleanup) => cleanup?.());
+    splitEditorListenersCleanupRef.current.clear();
+    splitEditorRefs.current.clear();
+    splitMonacoRefs.current.clear();
+    splitBreakpointDecorationsRef.current.clear();
+
+    if (activeEditorPaneRef.current === 'secondary') {
+      setActiveEditorPane('primary');
+    }
+
+    return undefined;
+  }, [splitEditorOpen]);
+
+  useEffect(() => {
+    if (!splitPaneGroups.length) {
+      if (splitEditorOpen) {
+        setSplitEditorOpen(false);
+      }
+      return;
+    }
+
+    if (!splitEditorOpen) {
+      setSplitEditorOpen(true);
+    }
+  }, [splitPaneGroups, splitEditorOpen]);
+
+  useEffect(() => {
+    setPrimaryGroupTabIds((current) => {
+      const next = current.filter((tabId) => {
+        if (tabId === '__welcome__') return welcomeTabOpen;
+        return workspace.tabs.some((tab) => tab.id === tabId);
+      });
+      if (activeEditorPane === 'primary') {
+        if (workspace.activeTabId && !next.includes(workspace.activeTabId)) {
+          next.push(workspace.activeTabId);
+        } else if (!workspace.activeTabId && welcomeTabOpen && !next.includes('__welcome__')) {
+          next.push('__welcome__');
+        }
+      }
+      return next;
+    });
+  }, [welcomeTabOpen, workspace.activeTabId, version, activeEditorPane]);
+
+  useEffect(() => {
+    if (!splitEditorOpen) {
+      setSplitPaneWeights([1]);
+      return;
+    }
+    const n = 1 + splitPaneGroups.length;
+    setSplitPaneWeights((weights) => (weights.length === n ? weights : Array(n).fill(1)));
+  }, [splitEditorOpen, splitPaneGroups.length]);
+
+  useEffect(() => {
+    if (!splitEditorOpen) {
+      setPrimaryActiveTabId(null);
+      return;
+    }
+    setPrimaryActiveTabId((prev) => {
+      if (prev && primaryGroupTabIds.includes(prev)) {
+        return prev;
+      }
+      const fallback =
+        primaryGroupTabIds.find((id) => id !== '__welcome__') || primaryGroupTabIds[0] || (welcomeTabOpen ? '__welcome__' : null);
+      return fallback;
+    });
+  }, [splitEditorOpen, primaryGroupTabIds, welcomeTabOpen]);
+
+  useEffect(() => {
+    if (!isResizingEditorSplit) {
+      return undefined;
+    }
+
+    function handlePointerMove(event) {
+      const { index, startX, startY, weights, axis } = editorSplitResizeRef.current;
+      const delta = axis === 'y' ? event.clientY - startY : event.clientX - startX;
+      editorSplitResizeRef.current.startX = event.clientX;
+      editorSplitResizeRef.current.startY = event.clientY;
+      setSplitPaneWeights((current) => {
+        const base = current.length ? current : weights;
+        if (!base.length || index < 0 || index >= base.length - 1) {
+          return base;
+        }
+        const next = [...base];
+        const adjust = delta * 0.004;
+        const left = Math.max(0.25, next[index] + adjust);
+        const right = Math.max(0.25, next[index + 1] - adjust);
+        next[index] = left;
+        next[index + 1] = right;
+        editorSplitResizeRef.current.weights = next;
+        return next;
+      });
+    }
+
+    function stopResizing() {
+      setIsResizingEditorSplit(false);
+    }
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', stopResizing);
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [isResizingEditorSplit]);
+
+  useEffect(() => {
     if (!isResizingSidebar) {
       return undefined;
     }
@@ -1848,6 +2627,51 @@ function App() {
       window.removeEventListener('mouseup', stopResizing);
     };
   }, [isResizingSidebar]);
+
+  useEffect(() => {
+    if (!splitEditorOpen) {
+      return;
+    }
+    setSplitPaneGroups((current) => {
+      const valid = current
+        .map((group) => {
+          const normalizedTabIds = (group.tabIds || []).filter((paneId) => {
+            if (paneId === '__welcome__') {
+              return welcomeTabOpen;
+            }
+            return workspace.tabs.some((tab) => tab.id === paneId);
+          });
+          const nextActive =
+            normalizedTabIds.includes(group.activeTabId)
+              ? group.activeTabId
+              : normalizedTabIds.find((paneId) => paneId !== '__welcome__') || normalizedTabIds[0] || null;
+          return nextActive
+            ? {
+                ...group,
+                tabIds: normalizedTabIds,
+                activeTabId: nextActive,
+                previewTabId: normalizedTabIds.includes(group.previewTabId) ? group.previewTabId : null,
+              }
+            : null;
+        })
+        .filter(Boolean);
+
+      if (valid.length) {
+        return valid;
+      }
+
+      // VS Code: closing the last tab in the last secondary group removes that group and exits
+      // split layout — do not inject a fallback group (that was reopening an empty side pane).
+      return [];
+    });
+  }, [splitEditorOpen, welcomeTabOpen, workspace.activeTabId, version]);
+
+  useEffect(() => {
+    if (!splitPaneGroups.length) {
+      return;
+    }
+    setFocusedSplitPaneIndex((i) => Math.min(i, Math.max(0, splitPaneGroups.length - 1)));
+  }, [splitPaneGroups.length]);
 
   useEffect(() => {
     if (!authSessionReadyRef.current || !authSession.syncProvider || applyingSyncStateRef.current) {
@@ -1927,7 +2751,7 @@ function App() {
     authSession.syncProvider,
   ]);
 
-  function syncEditorStatus(editorInstance = editorRef.current) {
+  function syncEditorStatus(editorInstance = getPreferredEditor()) {
     const editor = editorInstance;
     const model = editor?.getModel?.();
 
@@ -1966,6 +2790,7 @@ function App() {
     editorListenersCleanupRef.current();
     editorRef.current = editor;
     monacoRef.current = monaco;
+    setCommandPaletteEditorNonce((current) => current + 1);
 
     const update = () => {
       syncEditorStatus(editor);
@@ -1977,6 +2802,15 @@ function App() {
       editor.onDidChangeCursorSelection(update),
       model?.onDidChangeContent(update),
       model?.onDidChangeOptions(update),
+      editor.onDidFocusEditorText(() => {
+        setActiveEditorPane('primary');
+        setCommandPaletteEditorNonce((current) => current + 1);
+        if (splitEditorOpenMountRef.current && primaryActiveTabIdRef.current && primaryActiveTabIdRef.current !== '__welcome__') {
+          workspace.setActiveTab(primaryActiveTabIdRef.current);
+        }
+        syncEditorStatus(editor);
+        updateDebugDiagnostics(editor, monaco);
+      }),
       editor.onMouseDown((event) => {
         if (event.target.type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
           return;
@@ -1996,11 +2830,69 @@ function App() {
     };
 
     update();
-    refreshBreakpointDecorations(editor, monaco, workspace.activeTabId);
+    refreshBreakpointDecorations(editor, monaco, workspace.activeTabId, breakpointDecorationsRef);
+  }
+
+  function onSplitEditorMount(editor, monaco, paneIndex, paneTab) {
+    splitEditorListenersCleanupRef.current.get(paneIndex)?.();
+    splitEditorRefs.current.set(paneIndex, editor);
+    splitMonacoRefs.current.set(paneIndex, monaco);
+    setCommandPaletteEditorNonce((current) => current + 1);
+
+    const update = () => {
+      if (activeEditorPaneRef.current !== 'secondary' || focusedSplitPaneIndex !== paneIndex) {
+        return;
+      }
+
+      syncEditorStatus(editor);
+      updateDebugDiagnostics(editor, monaco);
+    };
+    const model = editor.getModel?.();
+    const listeners = [
+      editor.onDidChangeCursorPosition(update),
+      editor.onDidChangeCursorSelection(update),
+      model?.onDidChangeContent(update),
+      model?.onDidChangeOptions(update),
+      editor.onDidFocusEditorText(() => {
+        setFocusedSplitPaneIndex(paneIndex);
+        setActiveEditorPane('secondary');
+        setCommandPaletteEditorNonce((current) => current + 1);
+        syncEditorStatus(editor);
+        updateDebugDiagnostics(editor, monaco);
+      }),
+      editor.onMouseDown((event) => {
+        if (event.target.type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+          return;
+        }
+
+        if (!paneTab?.path) {
+          return;
+        }
+
+        toggleBreakpoint(paneTab.path, event.target.position?.lineNumber);
+      }),
+    ].filter(Boolean);
+
+    splitEditorListenersCleanupRef.current.set(paneIndex, () => {
+      listeners.forEach((listener) => listener.dispose());
+    });
+
+    if (activeEditorPaneRef.current === 'secondary' && focusedSplitPaneIndex === paneIndex) {
+      update();
+    }
+    if (!splitBreakpointDecorationsRef.current.has(paneIndex)) {
+      splitBreakpointDecorationsRef.current.set(paneIndex, { current: [] });
+    }
+    refreshBreakpointDecorations(
+      editor,
+      monaco,
+      paneTab?.id,
+      splitBreakpointDecorationsRef.current.get(paneIndex)
+    );
   }
 
   function runEditorAction(actionId, fallback) {
-    const editor = editorRef.current;
+    const editor = getPreferredEditor();
     if (!editor) {
       fallback?.();
       return;
@@ -2012,6 +2904,26 @@ function App() {
       editor.trigger('menu', actionId, null);
     } catch {
       fallback?.();
+    }
+  }
+
+  async function runMonacoPaletteAction(actionId) {
+    const editor = getPreferredEditor();
+    if (!editor?.getAction) {
+      return false;
+    }
+
+    const action = editor.getAction(actionId);
+    if (!action) {
+      return false;
+    }
+
+    editor.focus();
+    try {
+      await action.run();
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -2128,7 +3040,7 @@ function App() {
   }
 
   function submitGoToLine() {
-    const editor = editorRef.current;
+    const editor = getPreferredEditor();
     const model = editor?.getModel?.();
 
     if (!editor || !model) {
@@ -2221,7 +3133,7 @@ function App() {
       notifyExtensionDisabled('Live Preview Canvas');
       return;
     }
-    if (activeTab?.language !== 'html') {
+    if (livePreviewContextTab?.language !== 'html') {
       return;
     }
 
@@ -2238,7 +3150,7 @@ function App() {
       notifyExtensionDisabled('Live Preview Canvas');
       return false;
     }
-    if (activeTab?.language !== 'html') {
+    if (livePreviewContextTab?.language !== 'html') {
       return false;
     }
 
@@ -2255,9 +3167,9 @@ function App() {
   }
 
   function handleSetLanguage(language) {
-    const tab = workspace.getActiveTab();
-    const editor = editorRef.current;
-    const monaco = monacoRef.current;
+    const tab = getFocusedTab();
+    const editor = getPreferredEditor();
+    const monaco = getPreferredMonaco();
     if (!tab || !editor || !monaco) {
       return;
     }
@@ -2332,7 +3244,7 @@ function App() {
       }
 
       const openedTab = workspace.tabs.find((entry) => entry.path === workspacePath);
-      const content = openedTab?.content ?? (node.isDraft ? node.content || '' : await workspace.readFile(node));
+      const content = openedTab?.content ?? (node.isDraft ? node.content || '' : (await workspace.readFile(node)).content);
       const extension = node.name.includes('.') ? node.name.split('.').pop().toLowerCase() : '';
       const mimeTypes = {
         css: 'text/css',
@@ -2366,7 +3278,7 @@ function App() {
   }
 
   function handleToggleLivePreview() {
-    if (activeTab?.language !== 'html') {
+    if (livePreviewContextTab?.language !== 'html') {
       return;
     }
 
@@ -2386,8 +3298,8 @@ function App() {
   }
 
   function handleSetIndentation({ insertSpaces, tabSize }) {
-    const tab = workspace.getActiveTab();
-    const editor = editorRef.current;
+    const tab = getFocusedTab();
+    const editor = getPreferredEditor();
     const model = editor?.getModel?.();
     if (!tab || !editor || !model) {
       return;
@@ -2403,9 +3315,9 @@ function App() {
   }
 
   function handleSetEol(eol) {
-    const tab = workspace.getActiveTab();
-    const editor = editorRef.current;
-    const monaco = monacoRef.current;
+    const tab = getFocusedTab();
+    const editor = getPreferredEditor();
+    const monaco = getPreferredMonaco();
     const model = editor?.getModel?.();
     if (!tab || !editor || !model || !monaco) {
       return;
@@ -2437,6 +3349,9 @@ function App() {
     try {
       await workspace.openExternalFile();
       const openedTab = workspace.getActiveTab();
+      if (openedTab?.id) {
+        assignTabToFocusedGroup(openedTab.id, { preview: true });
+      }
       pushNotification(`Opened file ${openedTab?.name || 'file'}.`);
       refresh();
     } catch {
@@ -2444,8 +3359,13 @@ function App() {
     }
   }
 
-  async function handleOpenNode(node) {
+  async function handleOpenNode(node, openOptions = {}) {
+    const preview = openOptions.preview !== false;
     await workspace.openFile(node);
+    const openedTab = workspace.getActiveTab();
+    if (openedTab?.id) {
+      assignTabToFocusedGroup(openedTab.id, { preview });
+    }
     refresh();
   }
 
@@ -2454,8 +3374,13 @@ function App() {
 
     if (existingTab) {
       workspace.setActiveTab(existingTab.id);
+      assignTabToFocusedGroup(existingTab.id, { preview: true });
     } else {
       await workspace.openFile(result.path);
+      const openedTab = workspace.getActiveTab();
+      if (openedTab?.id) {
+        assignTabToFocusedGroup(openedTab.id, { preview: true });
+      }
     }
 
     refresh();
@@ -2466,7 +3391,7 @@ function App() {
 
     setTimeout(() => {
       requestAnimationFrame(() => {
-        const editor = editorRef.current;
+        const editor = getPreferredEditor();
         if (!editor) {
           return;
         }
@@ -2513,14 +3438,15 @@ function App() {
   }
 
   async function handleSaveActiveFile() {
-    if (!activeTab) {
+    const tab = getFocusedTab();
+    if (!tab) {
       return;
     }
 
     try {
-      const saved = await workspace.saveTab(activeTab.id);
+      const saved = await workspace.saveTab(tab.id);
       if (saved) {
-        pushNotification(`Saved ${workspace.getActiveTab()?.name || activeTab.name}.`);
+        pushNotification(`Saved ${workspace.getActiveTab()?.name || tab.name}.`);
         refresh();
       }
     } catch {
@@ -2529,14 +3455,15 @@ function App() {
   }
 
   async function handleSaveAsActiveFile() {
-    if (!activeTab) {
+    const tab = getFocusedTab();
+    if (!tab) {
       return;
     }
 
     try {
-      const saved = await workspace.saveTab(activeTab.id, { saveAs: true });
+      const saved = await workspace.saveTab(tab.id, { saveAs: true });
       if (saved) {
-        pushNotification(`Saved As ${workspace.getActiveTab()?.name || activeTab.name}.`);
+        pushNotification(`Saved As ${workspace.getActiveTab()?.name || tab.name}.`);
         refresh();
       }
     } catch {
@@ -2559,25 +3486,169 @@ function App() {
   function handleTabClick(id) {
     if (id === '__welcome__') {
       workspace.activeTabId = null;
+      setActiveEditorPane('primary');
+      assignTabToPrimaryGroup('__welcome__');
+      setPrimaryActiveTabId('__welcome__');
       refresh();
       return;
     }
 
     workspace.setActiveTab(id);
+    setActiveEditorPane('primary');
+    assignTabToPrimaryGroup(id);
+    setPrimaryActiveTabId(id);
+    touchGroupMru('primary', id);
     refresh();
   }
 
-  async function handleCloseTab(id) {
+  function handleSecondaryTabClick(id) {
+    handleSplitPaneTabClick(0, id);
+  }
+
+  function handleSplitPaneTabClick(index, id) {
+    setFocusedSplitPaneIndex(index);
+    const groupId = splitPaneGroups[index]?.id;
     if (id === '__welcome__') {
-      setWelcomeTabOpen(false);
-      if (!workspace.getActiveTab()) {
-        refresh();
+      setSplitPaneGroups((current) =>
+        current.map((entry, entryIndex) =>
+          entryIndex === index
+            ? { ...entry, activeTabId: '__welcome__', tabIds: entry.tabIds.includes('__welcome__') ? entry.tabIds : ['__welcome__', ...entry.tabIds] }
+            : entry
+        )
+      );
+      setActiveEditorPane('secondary');
+      workspace.activeTabId = null;
+      refresh();
+      return;
+    }
+
+    setSplitPaneGroups((current) =>
+      current.map((entry, entryIndex) => {
+        if (entryIndex !== index) {
+          return entry;
+        }
+        const nextIds = entry.tabIds.includes(id) ? entry.tabIds : [...entry.tabIds, id];
+        return { ...entry, activeTabId: id, tabIds: nextIds };
+      })
+    );
+    setActiveEditorPane('secondary');
+    workspace.setActiveTab(id);
+    if (groupId) {
+      touchGroupMru(groupId, id);
+    }
+    refresh();
+  }
+
+  async function handleCloseTab(id, fromGroupId) {
+    const globalClose = fromGroupId === undefined;
+
+    if (id === '__welcome__') {
+      if (globalClose) {
+        setWelcomeTabOpen(false);
+        const nextPrimary = primaryGroupTabIds.filter((t) => t !== '__welcome__');
+        const nextSplits = splitPaneGroups
+          .map((group) => {
+            const nextTabIds = group.tabIds.filter((paneId) => paneId !== '__welcome__');
+            let nextActive = group.activeTabId;
+            if (group.activeTabId === '__welcome__') {
+              nextActive =
+                pickNextActiveFromMru(nextTabIds, '__welcome__', group.id) ||
+                nextTabIds.find((paneId) => paneId !== '__welcome__') ||
+                nextTabIds[0] ||
+                null;
+            }
+            if (!nextActive) {
+              return null;
+            }
+            return { ...group, tabIds: nextTabIds, activeTabId: nextActive };
+          })
+          .filter(Boolean);
+        setPrimaryGroupTabIds(nextPrimary);
+        setPrimaryActiveTabId((prev) => {
+          if (prev !== '__welcome__') {
+            return prev;
+          }
+          return (
+            pickNextActiveFromMru(nextPrimary, '__welcome__', 'primary') ||
+            nextPrimary.find((t) => t !== '__welcome__') ||
+            nextPrimary[0] ||
+            null
+          );
+        });
+        setSplitPaneGroups(nextSplits);
+        if (!workspace.getActiveTab()) {
+          refresh();
+        }
+        return;
       }
+
+      const resolved = fromGroupId ?? resolveFocusedGroupForClose();
+      let nextPrimary = primaryGroupTabIds;
+      let nextSplits = splitPaneGroups;
+      if (resolved === 'primary') {
+        nextPrimary = primaryGroupTabIds.filter((t) => t !== '__welcome__');
+      } else {
+        nextSplits = splitPaneGroups
+          .map((group) => {
+            if (group.id !== resolved) {
+              return group;
+            }
+            const nextTabIds = group.tabIds.filter((t) => t !== '__welcome__');
+            let nextActive = group.activeTabId;
+            if (group.activeTabId === '__welcome__') {
+              nextActive =
+                pickNextActiveFromMru(nextTabIds, '__welcome__', group.id) ||
+                nextTabIds.find((t) => t !== '__welcome__') ||
+                nextTabIds[0] ||
+                null;
+            }
+            if (!nextActive) {
+              return null;
+            }
+            return { ...group, tabIds: nextTabIds, activeTabId: nextActive };
+          })
+          .filter(Boolean);
+      }
+      const stillHasWelcome =
+        nextPrimary.includes('__welcome__') || nextSplits.some((g) => g.tabIds.includes('__welcome__'));
+      if (!stillHasWelcome) {
+        setWelcomeTabOpen(false);
+      }
+      setPrimaryGroupTabIds(nextPrimary);
+      if (resolved === 'primary') {
+        setPrimaryActiveTabId((prev) => {
+          if (prev !== '__welcome__') {
+            return prev;
+          }
+          return (
+            pickNextActiveFromMru(nextPrimary, '__welcome__', 'primary') ||
+            nextPrimary.find((t) => t !== '__welcome__') ||
+            nextPrimary[0] ||
+            null
+          );
+        });
+      }
+      setSplitPaneGroups(nextSplits);
+      refresh();
       return;
     }
 
     const tab = workspace.tabs.find((entry) => entry.id === id);
-    if (tab?.dirty) {
+    const resolvedGroupId = globalClose ? null : fromGroupId ?? resolveFocusedGroupForClose();
+    const lastReferenceAfterClose = globalClose || !isTabReferencedOutsideGroup(id, resolvedGroupId);
+    const shouldDiscardUntitled = Boolean(tab?.isUntitled && lastReferenceAfterClose);
+    if (shouldDiscardUntitled) {
+      const confirmed = await requestConfirmation({
+        title: 'Delete Unsaved File',
+        message: `Delete ${tab.name}? It has not been saved yet.`,
+        confirmLabel: 'Delete',
+        cancelLabel: 'Keep',
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+    } else if (tab?.dirty && lastReferenceAfterClose) {
       const confirmed = await requestConfirmation({
         title: 'Close Unsaved Tab',
         message: `Close ${tab.name} without saving the latest changes?`,
@@ -2589,9 +3660,129 @@ function App() {
       }
     }
 
-    delete saveTimersRef.current[id];
-    workspace.closeTab(id);
+    if (globalClose) {
+      delete saveTimersRef.current[id];
+      if (tab && !shouldDiscardUntitled) {
+        closedEditorStackRef.current = [{ id: tab.id, path: tab.path, name: tab.name }, ...closedEditorStackRef.current].slice(0, 50);
+      }
+      setPinnedTabIds((current) => {
+        if (!current[id]) return current;
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      setPrimaryPreviewTabId((p) => (p === id ? null : p));
+      removeTabFromAllMru(id);
+      setPrimaryGroupTabIds((current) => current.filter((tabId) => tabId !== id));
+      setPrimaryActiveTabId((prev) => (prev === id ? null : prev));
+      setSplitPaneGroups((current) =>
+        current
+          .map((group) => {
+            const nextTabIds = group.tabIds.filter((paneId) => paneId !== id);
+            let nextActive = group.activeTabId;
+            if (group.activeTabId === id) {
+              nextActive =
+                pickNextActiveFromMru(nextTabIds, id, group.id) ||
+                nextTabIds.find((paneId) => paneId !== '__welcome__') ||
+                nextTabIds[0] ||
+                null;
+            }
+            const nextPv = group.previewTabId === id ? null : group.previewTabId;
+            return nextActive ? { ...group, tabIds: nextTabIds, activeTabId: nextActive, previewTabId: nextPv } : null;
+          })
+          .filter(Boolean)
+      );
+      await closeWorkspaceTabEntry(id, tab, { discardUntitled: shouldDiscardUntitled });
+      refresh();
+      return;
+    }
+
+    const resolved = resolvedGroupId ?? 'primary';
+    let nextPrimary = primaryGroupTabIds;
+    let nextPrimaryActive = primaryActiveTabId;
+    let nextSplits = splitPaneGroups;
+
+    if (resolved === 'primary') {
+      nextPrimary = primaryGroupTabIds.filter((t) => t !== id);
+      if (primaryPreviewTabId === id) {
+        setPrimaryPreviewTabId(null);
+      }
+      if (primaryActiveTabId === id) {
+        nextPrimaryActive =
+          pickNextActiveFromMru(nextPrimary, id, 'primary') ||
+          nextPrimary.find((t) => t !== '__welcome__') ||
+          nextPrimary[0] ||
+          null;
+      }
+    } else {
+      nextSplits = splitPaneGroups
+        .map((group) => {
+          if (group.id !== resolved) {
+            return group;
+          }
+          const nextTabIds = group.tabIds.filter((t) => t !== id);
+          let nextActive = group.activeTabId;
+          if (group.activeTabId === id) {
+            nextActive =
+              pickNextActiveFromMru(nextTabIds, id, group.id) ||
+              nextTabIds.find((t) => t !== '__welcome__') ||
+              nextTabIds[0] ||
+              null;
+          }
+          const nextPv = group.previewTabId === id ? null : group.previewTabId;
+          if (!nextActive) {
+            return null;
+          }
+          return { ...group, tabIds: nextTabIds, activeTabId: nextActive, previewTabId: nextPv };
+        })
+        .filter(Boolean);
+    }
+
+    const stillReferenced = nextPrimary.includes(id) || nextSplits.some((g) => g.tabIds.includes(id));
+
+    if (!stillReferenced) {
+      delete saveTimersRef.current[id];
+      if (tab && !shouldDiscardUntitled) {
+        closedEditorStackRef.current = [{ id: tab.id, path: tab.path, name: tab.name }, ...closedEditorStackRef.current].slice(0, 50);
+      }
+      setPinnedTabIds((current) => {
+        if (!current[id]) return current;
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      removeTabFromAllMru(id);
+      await closeWorkspaceTabEntry(id, tab, { discardUntitled: shouldDiscardUntitled });
+    } else {
+      removeTabFromGroupMru(resolved === 'primary' ? 'primary' : resolved, id);
+    }
+
+    setPrimaryGroupTabIds(nextPrimary);
+    setPrimaryActiveTabId(nextPrimaryActive);
+    setSplitPaneGroups(nextSplits);
     refresh();
+  }
+
+  async function handleReopenClosedEditor() {
+    const last = closedEditorStackRef.current.shift();
+    if (!last) {
+      return;
+    }
+    const existing = workspace.tabs.find((tab) => tab.id === last.id || tab.path === last.path);
+    if (existing) {
+      workspace.setActiveTab(existing.id);
+      assignTabToFocusedGroup(existing.id, { preview: false });
+      refresh();
+      return;
+    }
+    if (last.path && last.path !== 'root') {
+      await workspace.openFile(last.path);
+      const opened = workspace.getActiveTab();
+      if (opened?.id) {
+        assignTabToFocusedGroup(opened.id, { preview: false });
+      }
+      refresh();
+    }
   }
 
   function toggleInfoDisplay() {
@@ -2731,16 +3922,18 @@ function App() {
   }
 
   const watchValues = useMemo(() => {
-    const selection = editorRef.current?.getModel?.() && editorRef.current?.getSelection?.()
-      ? editorRef.current.getModel().getValueInRange(editorRef.current.getSelection())
+    const activeEditor = getPreferredEditor();
+    const activeTabSnapshot = getFocusedTab();
+    const selection = activeEditor?.getModel?.() && activeEditor?.getSelection?.()
+      ? activeEditor.getModel().getValueInRange(activeEditor.getSelection())
       : '';
     const context = {
       line: editorStatus.line,
       column: editorStatus.column,
       lines: editorStatus.lines,
-      fileName: activeTab?.name || '',
-      filePath: activeTab?.path || '',
-      language: activeTab?.language || 'plaintext',
+      fileName: activeTabSnapshot?.name || '',
+      filePath: activeTabSnapshot?.path || '',
+      language: activeTabSnapshot?.language || 'plaintext',
       selection,
       breakpoints: getActiveBreakpoints().length,
     };
@@ -2780,8 +3973,8 @@ function App() {
   }, [activeTab?.id]);
 
   useEffect(() => {
-    if (!livePreviewOpen || activeTab?.language !== 'html') {
-      if (activeTab?.language !== 'html') {
+    if (!livePreviewOpen || livePreviewContextTab?.language !== 'html') {
+      if (livePreviewContextTab?.language !== 'html') {
         setLivePreviewDocument('');
         clearLivePreview();
       }
@@ -2790,7 +3983,7 @@ function App() {
 
     let cancelled = false;
 
-    buildLivePreviewDocument(activeTab)
+    buildLivePreviewDocument(livePreviewContextTab)
       .then(({ document, url }) => {
         if (!cancelled) {
           setLivePreviewDocument(document);
@@ -2799,8 +3992,8 @@ function App() {
               previewId: LIVE_PREVIEW_ID,
               document,
               url,
-              title: activeTab.name,
-              path: activeTab.path,
+              title: livePreviewContextTab.name,
+              path: livePreviewContextTab.path,
               updatedAt: Date.now(),
             });
           }
@@ -2816,11 +4009,35 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab?.content, activeTab?.id, livePreviewMode, livePreviewNonce, livePreviewOpen, version]);
+  }, [livePreviewContextTab?.content, livePreviewContextTab?.id, livePreviewMode, livePreviewNonce, livePreviewOpen, version]);
 
   useEffect(() => {
     refreshBreakpointDecorations();
   }, [debugBreakpoints, workspace.activeTabId]);
+
+  useEffect(() => {
+    if (!splitEditorOpen) {
+      return;
+    }
+    splitPaneGroups.forEach((group, paneIndex) => {
+      const paneTabId = group.activeTabId;
+      const paneTab = paneTabId && paneTabId !== '__welcome__' ? workspace.tabs.find((tab) => tab.id === paneTabId) : null;
+      const editor = splitEditorRefs.current.get(paneIndex);
+      const monaco = splitMonacoRefs.current.get(paneIndex);
+      if (!paneTab?.id || !editor || !monaco) {
+        return;
+      }
+      if (!splitBreakpointDecorationsRef.current.has(paneIndex)) {
+        splitBreakpointDecorationsRef.current.set(paneIndex, { current: [] });
+      }
+      refreshBreakpointDecorations(
+        editor,
+        monaco,
+        paneTab.id,
+        splitBreakpointDecorationsRef.current.get(paneIndex)
+      );
+    });
+  }, [debugBreakpoints, splitEditorOpen, splitPaneGroups, version]);
 
   const commandActions = {
     'workbench.action.showCommands': () => openCommandPalette(),
@@ -2846,6 +4063,16 @@ function App() {
     'workbench.action.gotoFile': () => handleGoToFile(),
     'workbench.action.gotoSymbolWorkspace': () => handleGoToSymbolInWorkspace(),
     'workbench.action.gotoSymbolEditor': () => handleGoToSymbolInEditor(),
+    'workbench.action.splitEditorRight': () => openSplitEditorRight(),
+    'workbench.action.splitEditorDown': () => openSplitEditorDown(),
+    'workbench.action.focusNextGroup': () => focusNextSplitGroup(),
+    'workbench.action.focusPreviousGroup': () => focusPreviousSplitGroup(),
+    'workbench.action.closeActiveEditorGroup': () => closeFocusedSplitGroup(),
+    'workbench.action.moveEditorToNextGroup': () => moveActiveEditorToAdjacentGroup('next'),
+    'workbench.action.moveEditorToPreviousGroup': () => moveActiveEditorToAdjacentGroup('previous'),
+    'workbench.action.closeSplitEditor': () => closeSplitEditor(),
+    'workbench.action.reopenClosedEditor': () => handleReopenClosedEditor(),
+    'workbench.action.pinEditor': () => togglePinFocusedTab(),
     'editor.action.revealDefinition': () => handleGoToDefinition(),
     'editor.action.goToReferences': () => handleGoToReferences(),
     'workbench.action.debug.start': () => handleStartDebugging(),
@@ -2857,7 +4084,7 @@ function App() {
     'workbench.action.files.saveWorkspaceAs': () => handleSaveWorkspaceAs(),
     'workbench.action.closeActiveEditor': () => {
       if (tabActiveId) {
-        handleCloseTab(tabActiveId);
+        handleCloseTab(tabActiveId, resolveFocusedGroupForClose());
       }
     },
     'workbench.action.closeOtherEditors': () => {
@@ -2957,7 +4184,13 @@ function App() {
         onClose={closeCommandPalette}
         onRunCommand={(command) => {
           closeCommandPalette();
-          commandActions[command.id]?.();
+          const action = commandActions[command.id];
+          if (action) {
+            action();
+            return;
+          }
+
+          runMonacoPaletteAction(command.id);
         }}
       />
       <Info triggerInfoClose={triggerInfoClose} InfoDisplay={infoDisplay} />
@@ -2968,6 +4201,7 @@ function App() {
           pushNotification={pushNotification}
           extensionCatalog={extensionCatalog}
           marketplacePublishers={marketplacePublishers}
+          authSession={authSession}
          />
         <Account
           modalType={modalType}
@@ -3020,6 +4254,8 @@ function App() {
           openSearch={openSearchPanel}
           openSourceControl={() => toggleSidebarPanel('git')}
           openDebug={() => toggleSidebarPanel('debug')}
+          splitEditorRight={() => openSplitEditorRight()}
+          closeSplitEditor={closeSplitEditor}
           goToFile={handleGoToFile}
           goToLine={handleGoToLine}
           goToSymbolInWorkspace={handleGoToSymbolInWorkspace}
@@ -3048,55 +4284,226 @@ function App() {
           <div className="codewrpr">
             <ReviewBar />
             <div className={`maincodearea ${terminalOpen ? 'terminal-open' : ''}`} style={maincodeareaStyle} ref={mainCodeAreaRef}>
-              <Tabs
-                tabs={visibleTabs}
-                activeTabId={tabActiveId}
-                setActiveTab={handleTabClick}
-                closeTab={handleCloseTab}
-                onRunCurrentFile={handleRunCurrentFile}
-                onOpenCommandPalette={openCommandPalette}
-                showRunAction={!!activeTab}
-                showLivePreviewAction={showLivePreviewAction}
-                livePreviewOpen={livePreviewOpen}
-                livePreviewMode={livePreviewMode}
-                onToggleLivePreview={handleToggleLivePreview}
-                onOpenLivePreviewTab={() => {
-                  if (openTabLivePreview()) {
-                    pushNotification(`Live preview opened in a new tab for ${activeTab?.name || 'HTML file'}.`);
-                  }
-                }}
-              />
-              {activeTab ? (
-                <BreadcrumbsBar activeTab={activeTab} rootName={workspace.rootName || workspace.getRootNode()?.name || ''} />
+              {!splitEditorOpen ? (
+                <>
+                  <Tabs
+                    tabs={orderTabsForView(
+                      primaryGroupTabs.map((t) => ({ ...t, isPreview: primaryPreviewTabId === t.id }))
+                    )}
+                    activeTabId={tabActiveId}
+                    setActiveTab={handleTabClick}
+                    closeTab={handleCloseTab}
+                    onRunCurrentFile={handleRunCurrentFile}
+                    onOpenCommandPalette={openCommandPalette}
+                    showRunAction={!!activeTab}
+                    showLivePreviewAction={showLivePreviewAction}
+                    livePreviewOpen={livePreviewOpen}
+                    livePreviewMode={livePreviewMode}
+                    onToggleLivePreview={handleToggleLivePreview}
+                    showSplitEditorAction={!!activeTab}
+                    splitEditorOpen={splitEditorOpen}
+                    onSplitEditor={() => openSplitEditorRight(workspace.activeTabId || null)}
+                    groupId="primary"
+                    onTabDragStart={handleTabDragStart}
+                    onTabDrop={handleGroupTabDrop}
+                    onTogglePin={togglePinTab}
+                    onOpenLivePreviewTab={() => {
+                      if (openTabLivePreview()) {
+                        pushNotification(`Live preview opened in a new tab for ${activeTab?.name || 'HTML file'}.`);
+                      }
+                    }}
+                  />
+                  {activeTab ? (
+                    <BreadcrumbsBar activeTab={activeTab} rootName={workspace.rootName || workspace.getRootNode()?.name || ''} />
+                  ) : null}
+                </>
               ) : null}
               <div className={`editor-preview-row ${livePreviewOpen && showLivePreviewAction ? 'preview-open' : ''}`}>
-                <div className="editor-preview-main">
-                  {activeTab ? (
-                    <MonacoEditor
-                      key={activeTab.id}
-                      tab={activeTab}
-                      onChange={handleEditorChange}
-                      onMount={onEditorMount}
-                      onOpenCommandPalette={openCommandPalette}
-                      onGoToLine={handleGoToLine}
-                      intelliSense={activeIntelliSense}
-                      lspBridge={activeLspBridge}
-                      settings={settings}
-                      MonacoEditorDisplay="flex"
-                      monacoEditorStyle={monacoEditorStyle}
-                    />
-                  ) : null}
-                  {showDefaultPage ? <DefaultPage DefaultPageDisplay="flex" dimensionsDefaultPage={contentSurfaceStyle} /> : null}
-              {showWelcomePage ? (
-                  <WelcomePage
-                    DimensionsWelcomePage={contentSurfaceStyle}
-                    WelcomePageDisplay="flex"
-                    triggerNewFile={handleCreateUntitledFile}
-                    triggerOpenFolder={handleOpenFolder}
-                    triggerOpenFile={handleOpenFileDialog}
-                    triggerNewFolder={handleCreateFolder}
-                  />
-                ) : null}
+                <div className={`editor-preview-main ${splitEditorOpen ? 'split-open' : ''}`}>
+                  <div
+                    className={`editor-split-layout ${splitEditorOpen && editorSplitDirection === 'vertical' ? 'editor-split-layout-vertical' : ''}`}
+                  >
+                    <div
+                      className="editor-pane editor-pane-primary"
+                      style={splitEditorOpen ? { flex: `${splitPaneWeights[0] || 1} 1 0%` } : undefined}
+                    >
+                      {splitEditorOpen ? (
+                        <Tabs
+                          tabs={orderTabsForView(
+                            primaryGroupTabs.map((t) => ({ ...t, isPreview: primaryPreviewTabId === t.id }))
+                          )}
+                          activeTabId={primaryActiveTabId}
+                          setActiveTab={handleTabClick}
+                          closeTab={handleCloseTab}
+                          onRunCurrentFile={handleRunCurrentFile}
+                          onOpenCommandPalette={openCommandPalette}
+                          showRunAction={!!primaryPaneEditorTab || splitPrimaryWelcomeOpen}
+                          showLivePreviewAction={false}
+                          livePreviewOpen={false}
+                          livePreviewMode={livePreviewMode}
+                          onToggleLivePreview={handleToggleLivePreview}
+                          showSplitEditorAction={!!primaryPaneEditorTab || splitPrimaryWelcomeOpen}
+                          splitEditorOpen={splitEditorOpen}
+                          onSplitEditor={() => openSplitEditorRight(primaryPaneEditorTab?.id || null)}
+                          groupId="primary"
+                          onTabDragStart={handleTabDragStart}
+                          onTabDrop={handleGroupTabDrop}
+                          onTogglePin={togglePinTab}
+                          onOpenLivePreviewTab={() => {}}
+                        />
+                      ) : null}
+                      {splitEditorOpen && primaryPaneEditorTab ? (
+                        <BreadcrumbsBar
+                          activeTab={primaryPaneEditorTab}
+                          rootName={workspace.rootName || workspace.getRootNode()?.name || ''}
+                        />
+                      ) : null}
+                      {!splitEditorOpen && activeTab ? (
+                        <MonacoEditor
+                          key={activeTab.id}
+                          tab={activeTab}
+                          onChange={handleEditorChange}
+                          onMount={onEditorMount}
+                          onFocusEditor={() => setActiveEditorPane('primary')}
+                          onOpenCommandPalette={openCommandPalette}
+                          onGoToLine={handleGoToLine}
+                          intelliSense={activeIntelliSense}
+                          lspBridge={activeLspBridge}
+                          settings={settings}
+                          MonacoEditorDisplay="flex"
+                          monacoEditorStyle={monacoEditorStyle}
+                        />
+                      ) : null}
+                      {splitEditorOpen && primaryPaneEditorTab ? (
+                        <MonacoEditor
+                          key={primaryPaneEditorTab.id}
+                          tab={primaryPaneEditorTab}
+                          onChange={handleEditorChange}
+                          onMount={onEditorMount}
+                          onFocusEditor={() => setActiveEditorPane('primary')}
+                          onOpenCommandPalette={openCommandPalette}
+                          onGoToLine={handleGoToLine}
+                          intelliSense={activeIntelliSense}
+                          lspBridge={activeLspBridge}
+                          settings={settings}
+                          MonacoEditorDisplay="flex"
+                          monacoEditorStyle={splitMonacoEditorStyle}
+                        />
+                      ) : null}
+                      {!splitEditorOpen && showDefaultPage ? (
+                        <DefaultPage DefaultPageDisplay="flex" dimensionsDefaultPage={contentSurfaceStyle} />
+                      ) : null}
+                      {splitEditorOpen && splitPrimaryDefaultOpen ? (
+                        <DefaultPage DefaultPageDisplay="flex" dimensionsDefaultPage={contentSurfaceStyle} />
+                      ) : null}
+                      {!splitEditorOpen && showWelcomePage ? (
+                        <WelcomePage
+                          DimensionsWelcomePage={contentSurfaceStyle}
+                          WelcomePageDisplay="flex"
+                          triggerNewFile={handleCreateUntitledFile}
+                          triggerOpenFolder={handleOpenFolder}
+                          triggerOpenFile={handleOpenFileDialog}
+                          triggerNewFolder={handleCreateFolder}
+                        />
+                      ) : null}
+                      {splitEditorOpen && splitPrimaryWelcomeOpen ? (
+                        <WelcomePage
+                          DimensionsWelcomePage={contentSurfaceStyle}
+                          WelcomePageDisplay="flex"
+                          triggerNewFile={handleCreateUntitledFile}
+                          triggerOpenFolder={handleOpenFolder}
+                          triggerOpenFile={handleOpenFileDialog}
+                          triggerNewFolder={handleCreateFolder}
+                        />
+                      ) : null}
+                    </div>
+                    {splitEditorOpen
+                      ? splitPaneGroups.map((group, paneIndex) => {
+                          const paneTabId = group.activeTabId;
+                          const paneTab = paneTabId && paneTabId !== '__welcome__'
+                            ? workspace.tabs.find((tab) => tab.id === paneTabId) || null
+                            : null;
+                          const paneWelcomeOpen = paneTabId === '__welcome__';
+                          const groupTabModels = (group.tabIds || [])
+                            .map((id) => visibleTabs.find((tab) => tab.id === id))
+                            .filter(Boolean)
+                            .map((t) => ({ ...t, isPreview: group.previewTabId === t.id }));
+
+                          return (
+                            <Fragment key={`split-pane-${group.id}-${paneTabId || 'empty'}`}>
+                              <div
+                                className={`editor-split-resizer ${isResizingEditorSplit ? 'is-active' : ''}`}
+                                onMouseDown={startEditorSplitResize(paneIndex)}
+                                title="Resize editor group"
+                                role="separator"
+                                aria-orientation="vertical"
+                              />
+                              <div
+                                className="editor-pane editor-pane-secondary"
+                                style={{ flex: `${splitPaneWeights[paneIndex + 1] || 1} 1 0%` }}
+                              >
+                              <Tabs
+                                tabs={orderTabsForView(groupTabModels)}
+                                activeTabId={paneWelcomeOpen ? '__welcome__' : paneTab?.id || null}
+                                setActiveTab={(id) => handleSplitPaneTabClick(paneIndex, id)}
+                                closeTab={handleCloseTab}
+                                onRunCurrentFile={handleRunCurrentFile}
+                                onOpenCommandPalette={openCommandPalette}
+                                showRunAction={!!paneTab || paneWelcomeOpen}
+                                showLivePreviewAction={false}
+                                livePreviewOpen={false}
+                                livePreviewMode={livePreviewMode}
+                                onToggleLivePreview={handleToggleLivePreview}
+                                showSplitEditorAction={!!paneTab || paneWelcomeOpen}
+                                splitEditorOpen={splitEditorOpen}
+                                onSplitEditor={() => openSplitEditorRight(paneTab?.id || null)}
+                                groupId={group.id}
+                                onTabDragStart={handleTabDragStart}
+                                onTabDrop={handleGroupTabDrop}
+                                onTogglePin={togglePinTab}
+                                onOpenLivePreviewTab={() => {}}
+                              />
+                              {paneTab ? (
+                                <MonacoEditor
+                                  key={`secondary-${paneIndex}-${paneTab.id}`}
+                                  tab={paneTab}
+                                  onChange={(value) => {
+                                    workspace.updateTabContent(paneTab.id, value ?? '');
+                                    refresh();
+                                    queueSave(paneTab.id);
+                                  }}
+                                  onMount={(editor, monaco) => onSplitEditorMount(editor, monaco, paneIndex, paneTab)}
+                                  onFocusEditor={() => {
+                                    setFocusedSplitPaneIndex(paneIndex);
+                                    setActiveEditorPane('secondary');
+                                    if (paneTab?.id) {
+                                      workspace.setActiveTab(paneTab.id);
+                                    }
+                                  }}
+                                  onOpenCommandPalette={openCommandPalette}
+                                  onGoToLine={handleGoToLine}
+                                  intelliSense={activeIntelliSense}
+                                  lspBridge={activeLspBridge}
+                                  settings={settings}
+                                  MonacoEditorDisplay="flex"
+                                  monacoEditorStyle={splitMonacoEditorStyle}
+                                />
+                              ) : paneWelcomeOpen ? (
+                                <WelcomePage
+                                  DimensionsWelcomePage={contentSurfaceStyle}
+                                  WelcomePageDisplay="flex"
+                                  triggerNewFile={handleCreateUntitledFile}
+                                  triggerOpenFolder={handleOpenFolder}
+                                  triggerOpenFile={handleOpenFileDialog}
+                                  triggerNewFolder={handleCreateFolder}
+                                />
+                              ) : null}
+                              </div>
+                            </Fragment>
+                          );
+                        })
+                      : null}
+                  </div>
                 </div>
                 {previewColumnOpen ? (
                   <div

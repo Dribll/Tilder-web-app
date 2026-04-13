@@ -28,7 +28,7 @@ export const CODE_EXTENSIONS = new Set([
 export const ASSET_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico']);
 
 export function escapeRegex(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function getExtension(name = '') {
@@ -98,16 +98,23 @@ export function getSearchPool(workspace, scope = 'workspace') {
 }
 
 export function buildMatcher(query, { caseSensitive, wholeWord, useRegex }) {
-  if (!query.trim()) {
+  const normalizedQuery = String(query ?? '');
+  const trimmedQuery = normalizedQuery.trim();
+
+  if (!trimmedQuery) {
     return null;
   }
 
   if (useRegex) {
     const flags = caseSensitive ? 'g' : 'gi';
-    return new RegExp(query, flags);
+    try {
+      return new RegExp(normalizedQuery, flags);
+    } catch (error) {
+      throw new Error(`Invalid regular expression: ${error.message}`);
+    }
   }
 
-  const escaped = escapeRegex(query.trim());
+  const escaped = escapeRegex(trimmedQuery);
   const source = wholeWord ? `\\b${escaped}\\b` : escaped;
   const flags = caseSensitive ? 'g' : 'gi';
   return new RegExp(source, flags);
@@ -170,7 +177,8 @@ export async function readSearchContent(workspace, entry) {
   }
 
   if (entry.node) {
-    return workspace.readFile(entry.node);
+    const payload = await workspace.readFile(entry.node);
+    return payload?.isBinary ? '' : payload?.content || '';
   }
 
   return '';
