@@ -13,4 +13,4 @@ jobs:
       - name: Ping Render Server
         run: |
           # The URL is now stored safely in GitHub Secrets
-          curl -s "${{ secrets.TILDER_SERVICE_URL }}/api/auth/status" || echo "Server is waking up..."
+          curl -s "https://tilder-services.onrender.com/api/auth/status" || echo "Server is waking up..."
