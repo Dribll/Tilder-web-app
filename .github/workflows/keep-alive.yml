@@ -1,0 +1,16 @@
+name: Keep Render Alive
+
+on:
+  schedule:
+    # Run every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Server
+        run: |
+          # The URL is now stored safely in GitHub Secrets
+          curl -s "${{ secrets.TILDER_SERVICE_URL }}/api/auth/status" || echo "Server is waking up..."
