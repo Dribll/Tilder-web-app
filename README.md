@@ -37,7 +37,7 @@ Contributions are welcome! If you'd like to contribute to Tilder Code Editor, pl
 
 or
 
-* [Submit bugs and feature requests](https://github.com/dsoftofficial/tilder/issues), and help us verify as they are checked in
+* [Submit bugs and feature requests](https://github.com/Dribll/Tilder-web-app/pulls), and help us verify as they are checked in
 * Review [source code changes](https://github.com/dsoftofficial/tilder/pulls)
 
 ---
